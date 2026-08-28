@@ -10,6 +10,12 @@ __pycache__/
 codigos_sorteados_*.csv
 relatorio_envio_*.csv
 
+# Artefatos de build do executável
+build/
+dist/
+*.spec
+assets/icone.ico
+
 # Dados gerados em runtime
 codigos_emitidos.json
 src/cache/
