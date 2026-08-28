@@ -82,6 +82,48 @@ Ana Souza;ana@example.com;4631, 3087, 1050
 João Pereira;joao@example.com;5793, 0704
 ```
 
+## Envio de e-mails (SMTP – Outlook/Office 365)
+
+O envio dos códigos aos participantes é feito via **SMTP do Outlook/Office 365**
+(`smtp.office365.com:587` com TLS). A autenticação usa a conta de um remetente que
+possui permissão de **"enviar como"** sobre a caixa compartilhada de onde os
+e-mails são originados.
+
+| Papel | Valor |
+|---|---|
+| Host | `smtp.office365.com` |
+| Porta | `587` |
+| Login (autenticação) | conta com permissão de envio sobre a caixa compartilhada (ex.: `alex.fritsche@adm.educadventista.org`) |
+| De (`From`, caixa compartilhada) | ex.: `dpcab.anc@adm.educadventista.org` |
+| Para (`To`) | e-mail do participante |
+
+### Como testar
+
+O envio real é coberto pelo teste `tests/test_smtp.py`. Para executá-lo, defina a
+senha via variável de ambiente (as credenciais **nunca** devem ir para o código):
+
+```powershell
+$env:GIVEAWAY_SMTP_PASS = "SUA_SENHA"
+uv run pytest tests/test_smtp.py -v
+```
+
+Variáveis de ambiente aceitas (todas com padrão sensato, exceto a senha):
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `GIVEAWAY_SMTP_HOST` | `smtp.office365.com` | Host SMTP |
+| `GIVEAWAY_SMTP_PORT` | `587` | Porta SMTP |
+| `GIVEAWAY_SMTP_LOGIN` | `alex.fritsche@adm.educadventista.org` | Conta usada na autenticação |
+| `GIVEAWAY_SMTP_FROM` | `dpcab.anc@adm.educadventista.org` | Caixa compartilhada de origem |
+| `GIVEAWAY_SMTP_TO` | `alexpiltz.fritsche@gmail.com` | E-mail de teste de destino |
+| `GIVEAWAY_SMTP_PASS` | *(obrigatória)* | Senha da conta de login |
+
+Sem `GIVEAWAY_SMTP_PASS`, o teste é **pulado** (não falha). O envio usa o módulo
+padrão do Python (`smtplib`, `email`), sem dependências adicionais.
+
+> **Segurança:** nunca commite a senha. Sempre passe-a por variável de ambiente
+> (ou credencial gerenciada) no ambiente de execução.
+
 ## Sobre a não-repetição
 
 O arquivo `codigos_emitidos.json`, na raiz do projeto, guarda todos os códigos já
