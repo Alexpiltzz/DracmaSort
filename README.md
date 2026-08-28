@@ -40,7 +40,7 @@ uv run gerador-codigos
 uv run gerador-codigos --arquivo participantes.xlsx
 
 # Alternativa direta ao módulo
-uv run python -m gerador_codigos
+uv run python -m code_gen
 ```
 
 ### Opções
@@ -97,32 +97,45 @@ e-mails são originados.
 | De (`From`, caixa compartilhada) | ex.: `dpcab.anc@adm.educadventista.org` |
 | Para (`To`) | e-mail do participante |
 
-### Como testar
+A implementação fica no módulo `src/code_gen/smtp.py`, com as funções
+`montar_mensagem_html`, `enviar_email` e a configuração tipada `SmtpConfig`.
 
-O envio real é coberto pelo teste `tests/test_smtp.py`. Para executá-lo, defina a
-senha via variável de ambiente (as credenciais **nunca** devem ir para o código):
+### Configuração (`SmtpConfig`)
 
-```powershell
-$env:GIVEAWAY_SMTP_PASS = "SUA_SENHA"
-uv run pytest tests/test_smtp.py -v
-```
-
-Variáveis de ambiente aceitas (todas com padrão sensato, exceto a senha):
+As configurações são lidas de **variáveis de ambiente** ou de um arquivo **`.env`**
+na raiz do projeto (carregado automaticamente pelo módulo). Variáveis de ambiente
+declaradas na sessão prevalecem sobre o `.env`.
 
 | Variável | Padrão | Descrição |
 |---|---|---|
 | `GIVEAWAY_SMTP_HOST` | `smtp.office365.com` | Host SMTP |
 | `GIVEAWAY_SMTP_PORT` | `587` | Porta SMTP |
 | `GIVEAWAY_SMTP_LOGIN` | `alex.fritsche@adm.educadventista.org` | Conta usada na autenticação |
-| `GIVEAWAY_SMTP_FROM` | `dpcab.anc@adm.educadventista.org` | Caixa compartilhada de origem |
-| `GIVEAWAY_SMTP_TO` | `alexpiltz.fritsche@gmail.com` | E-mail de teste de destino |
 | `GIVEAWAY_SMTP_PASS` | *(obrigatória)* | Senha da conta de login |
+| `GIVEAWAY_SMTP_FROM` | `dpcab.anc@adm.educadventista.org` | Caixa compartilhada de origem |
+| `GIVEAWAY_SMTP_TO` | `alexpiltz.fritsche@gmail.com` | E-mail de destino |
+
+Crie um arquivo `.env` na raiz do projeto com suas credenciais pessoais (modelo em
+`.env.example`). O `.env` está no `.gitignore` — **nunca commite a senha**:
+
+```dotenv
+GIVEAWAY_SMTP_LOGIN=alex.fritsche@adm.educadventista.org
+GIVEAWAY_SMTP_PASS=SUA_SENHA
+GIVEAWAY_SMTP_FROM=dpcab.anc@adm.educadventista.org
+GIVEAWAY_SMTP_TO=alexpiltz.fritsche@gmail.com
+```
+
+### Como testar
+
+O envio real é coberto pelo teste `tests/test_smtp.py`, que usa as credenciais do
+`.env`:
+
+```powershell
+uv run pytest tests/test_smtp.py -v
+```
 
 Sem `GIVEAWAY_SMTP_PASS`, o teste é **pulado** (não falha). O envio usa o módulo
 padrão do Python (`smtplib`, `email`), sem dependências adicionais.
-
-> **Segurança:** nunca commite a senha. Sempre passe-a por variável de ambiente
-> (ou credencial gerenciada) no ambiente de execução.
 
 ## Sobre a não-repetição
 
@@ -142,9 +155,11 @@ uv run ruff check    # lint
 ## Estrutura
 
 ```
-src/gerador_codigos/
-├── __main__.py    # CLI + diálogo de seleção de arquivo
-├── core.py        # geração aleatória + registro de códigos usados
-└── io.py          # leitura xlsx/csv e escrita do CSV de saída
-tests/             # testes (pytest)
+src/code_gen/
+├── __init__.py   # metadados do pacote
+├── __main__.py   # CLI + diálogo de seleção de arquivo
+├── core.py       # geração aleatória + registro de códigos usados
+├── io.py         # leitura xlsx/csv e escrita do CSV de saída
+└── smtp.py       # envio de e-mails (SMTP Outlook/Office 365)
+tests/            # testes (pytest)
 ```

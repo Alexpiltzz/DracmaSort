@@ -19,10 +19,10 @@ dev = [
 ]
 
 [project.scripts]
-gerador-codigos = "gerador_codigos.__main__:main"
+gerador-codigos = "code_gen.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/gerador_codigos"]
+packages = ["src/code_gen"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

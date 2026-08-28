@@ -9,6 +9,9 @@ __pycache__/
 # Saída do gerador
 codigos_sorteados_*.csv
 
+# Configuração local (contém credenciais — não versionar)
+.env
+
 # IDEs e SO
 .idea/
 .vscode/

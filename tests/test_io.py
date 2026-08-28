@@ -1,7 +1,7 @@
 import pytest
 from openpyxl import Workbook
 
-from gerador_codigos.io import default_registry_path, read_spreadsheet, write_output_csv
+from code_gen.io import default_registry_path, read_spreadsheet, write_output_csv
 
 
 def test_read_csv_semicolon(tmp_path):

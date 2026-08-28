@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from gerador_codigos.core import (
+from code_gen.core import (
     MAX_CODE,
     MIN_CODE,
     CodeRegistry,
