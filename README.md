@@ -100,6 +100,35 @@ e-mails são originados.
 A implementação fica no módulo `src/code_gen/smtp.py`, com as funções
 `montar_mensagem_html`, `enviar_email` e a configuração tipada `SmtpConfig`.
 
+## Fluxo completo (interactive CLI) — `main.py`
+
+Além da CLI por argumentos (`__main__.py`), há um fluxo **interativo** que unifica
+todo o pipeline em um só lugar: seleção da planilha → leitura → geração dos códigos
+→ escrita do CSV → **envio dos e-mails**. Ele conversa com você no terminal
+(passos confirmados um a um).
+
+```sh
+# Fluxo interativo com diálogo para escolher a planilha
+uv run gerador-interativo
+
+# Informando o arquivo antecipadamente (evita o seletor)
+uv run gerador-interativo --arquivo participantes.xlsx
+
+# Envia apenas um e-mail de teste (para GIVEAWAY_SMTP_TO), sem disparar para todos
+uv run gerador-interativo --arquivo participantes.xlsx --teste
+
+# Alternativa direta ao módulo
+uv run python -m code_gen.main
+```
+
+### Modos de envio
+
+| Modo | Comportamento |
+|---|---|
+| Padrão | Após gerar o CSV, pergunta a confirmação e envia **um e-mail por participante** com seus códigos. |
+| `--teste` | Envia **um único e-mail de teste** (sem códigos) para `GIVEAWAY_SMTP_TO` — ideal para validar o pipeline sem incomodar ninguém. |
+| Sem senha | Sem `GIVEAWAY_SMTP_PASS`, roda em **dry-run**: gera tudo, mas apenas exibe a mensagem que seria enviada (nenhum e-mail real). |
+
 ### Configuração (`SmtpConfig`)
 
 As configurações são lidas de **variáveis de ambiente** ou de um arquivo **`.env`**
@@ -157,7 +186,8 @@ uv run ruff check    # lint
 ```
 src/code_gen/
 ├── __init__.py   # metadados do pacote
-├── __main__.py   # CLI + diálogo de seleção de arquivo
+├── __main__.py   # CLI por argumentos + diálogo de seleção de arquivo
+├── main.py       # fluxo interativo completo (inclui envio de e-mails)
 ├── core.py       # geração aleatória + registro de códigos usados
 ├── io.py         # leitura xlsx/csv e escrita do CSV de saída
 └── smtp.py       # envio de e-mails (SMTP Outlook/Office 365)

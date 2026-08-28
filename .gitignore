@@ -8,6 +8,11 @@ __pycache__/
 
 # Saída do gerador
 codigos_sorteados_*.csv
+relatorio_envio_*.csv
+
+# Dados gerados em runtime
+codigos_emitidos.json
+src/cache/
 
 # Configuração local (contém credenciais — não versionar)
 .env

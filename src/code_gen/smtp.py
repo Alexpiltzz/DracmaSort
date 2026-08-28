@@ -78,7 +78,7 @@ def montar_mensagem_html(
     nome: str,
     from_addr: str,
     to_addr: str,
-    numeros: list[str] | None = None,
+    numeros: list[str] | str | None = None,
 ) -> MIMEMultipart:
     """Monta a mensagem de e-mail em HTML (opcionalmente com os números do sorteio)."""
     msg = MIMEMultipart()
@@ -87,17 +87,43 @@ def montar_mensagem_html(
     msg["Subject"] = "Seus números para o sorteio"
 
     if numeros:
-        numeros_html = "<br>".join(f"<strong>{numero}</strong>" for numero in numeros)
+        if isinstance(numeros, list):
+            numeros_formatados = ", ".join(numeros)
+        else:
+            numeros_formatados = str(numeros)
+
         corpo = f"""
-        <html><body>
-            <p>Olá, <strong>{nome}</strong>!</p>
-            <p>Agradecemos pela realização da matrícula.</p>
-            <p>Você recebeu os seguintes números para participar do sorteio:</p>
-            <h2>{numeros_html}</h2>
-            <p>Guarde estes números.</p>
-            <p>Atenciosamente,<br><strong>Colégio</strong></p>
-        </body></html>
-        """
+    <html>
+    <body>
+
+        <p>Olá, <strong>{nome}</strong>!</p>
+
+        <p>
+        Agradecemos pela realização da matrícula.
+        </p>
+
+        <p>
+        Você recebeu os seguintes números para participar do nosso sorteio:
+        </p>
+
+        <h2>
+            {numeros_formatados}
+        </h2>
+
+        <p>
+        Guarde estes números.
+        </p>
+
+        <br>
+
+        <p>
+        Atenciosamente,<br>
+        <strong>Colégio</strong>
+        </p>
+
+    </body>
+    </html>
+    """
     else:
         corpo = f"""
         <html><body>

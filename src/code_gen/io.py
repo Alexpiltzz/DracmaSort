@@ -8,6 +8,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 OUTPUT_FIELDS = ["Nome", "E-mail", "Códigos"]
+REPORT_FIELDS = ["Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
+
 
 
 def _normalize(value: str) -> str:
@@ -127,5 +129,19 @@ def default_output_path(input_path: Path) -> Path:
     return Path(input_path).parent / f"codigos_sorteados_{timestamp}.csv"
 
 
+def write_report_csv(path: Path, rows: list[dict]) -> None:
+    """Grava o CSV de relatório de envio com BOM e delimitador ';'."""
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=REPORT_FIELDS, delimiter=";")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def default_report_path(input_path: Path) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return Path(input_path).parent / f"relatorio_envio_{timestamp}.csv"
+
+
 def default_registry_path() -> Path:
     return Path(__file__).resolve().parents[2] / "codigos_emitidos.json"
+

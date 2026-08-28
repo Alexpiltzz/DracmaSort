@@ -1,7 +1,13 @@
 import pytest
 from openpyxl import Workbook
 
-from code_gen.io import default_registry_path, read_spreadsheet, write_output_csv
+from code_gen.io import (
+    default_registry_path,
+    default_report_path,
+    read_spreadsheet,
+    write_output_csv,
+    write_report_csv,
+)
 
 
 def test_read_csv_semicolon(tmp_path):
@@ -59,3 +65,24 @@ def test_default_registry_path_points_to_project_root():
     parts = default_registry_path().parts
     assert "Giveaways_Tools" in parts
     assert default_registry_path().name == "codigos_emitidos.json"
+
+
+def test_write_report_csv_e_path(tmp_path):
+    input_file = tmp_path / "participantes.csv"
+    rep_path = default_report_path(input_file)
+    assert rep_path.name.startswith("relatorio_envio_")
+    assert rep_path.suffix == ".csv"
+
+    rows = [{
+        "Nome": "Maria",
+        "E-mail": "m@ex.com",
+        "Códigos": "0001",
+        "Status": "Sucesso",
+        "Data_Hora": "2026-08-28 10:00:00",
+        "Detalhes": "Enviado com sucesso",
+    }]
+    write_report_csv(rep_path, rows)
+    text = rep_path.read_text(encoding="utf-8-sig")
+    assert "Nome;E-mail;Códigos;Status;Data_Hora;Detalhes" in text
+    assert "Sucesso" in text
+
