@@ -7,6 +7,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from .runtime import app_root
+
 OUTPUT_FIELDS = ["Nome", "E-mail", "Códigos"]
 REPORT_FIELDS = ["Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
 
@@ -70,7 +72,7 @@ def _parse_quantity(value) -> int | None:
     return qty if qty >= 1 else None
 
 
-def _is_valid_email(email: str) -> bool:
+def is_valid_email(email: str) -> bool:
     return "@" in email and "." in email.split("@")[-1]
 
 
@@ -106,13 +108,22 @@ def read_spreadsheet(path: Path) -> tuple[list[dict], list[str]]:
         if not name:
             warnings.append(f"Linha {line_no}: nome vazio, ignorada.")
             continue
-        if not _is_valid_email(email):
-            warnings.append(f"Linha {line_no}: e-mail inválido ({email or 'vazio'}), ignorada.")
-            continue
         if quantity is None:
             warnings.append(f"Linha {line_no}: quantidade inválida ({quantity_text}), ignorada.")
             continue
-        records.append({"nome": name, "email": email, "quantidade": quantity})
+        email_valid = is_valid_email(email)
+        if not email_valid:
+            warnings.append(
+                f"Linha {line_no}: e-mail inválido ({email or 'vazio'}), mantido para revisão."
+            )
+        records.append(
+            {
+                "nome": name,
+                "email": email,
+                "quantidade": quantity,
+                "email_valido": email_valid,
+            }
+        )
     return records, warnings
 
 
@@ -121,7 +132,8 @@ def write_output_csv(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=OUTPUT_FIELDS, delimiter=";")
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow({field: row.get(field, "") for field in OUTPUT_FIELDS})
 
 
 def default_output_path(input_path: Path) -> Path:
@@ -143,5 +155,4 @@ def default_report_path(input_path: Path) -> Path:
 
 
 def default_registry_path() -> Path:
-    return Path(__file__).resolve().parents[2] / "codigos_emitidos.json"
-
+    return app_root() / "codigos_emitidos.json"

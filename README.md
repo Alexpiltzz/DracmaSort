@@ -31,7 +31,7 @@ Gera códigos de sorteio únicos (4 dígitos, de `0001` a `9999`) a partir de um
 uv sync
 ```
 
-Isso cria o ambiente virtual em `.venv` e instala as dependências (`openpyxl`, `tqdm`).
+Isso cria o ambiente virtual em `.venv` e instala as dependências (`openpyxl`, `tqdm`, `PyQt6`).
 
 ---
 
@@ -55,6 +55,31 @@ uv run python main.py --arquivo participantes.xlsx --teste
 ```powershell
 uv run gerador-interativo --arquivo participantes.xlsx
 ```
+
+### 3. Interface Gráfica
+
+```powershell
+# Abre a Central de Sorteios (PyQt)
+uv run python main_ui.py
+
+# Ou pelo atalho registrado
+uv run gerador-grafico
+```
+
+A tela mostra os participantes válidos importados, os códigos gerados e o
+status individual de cada envio. A aba **Mensagem** permite editar o assunto
+e o corpo usando Markdown, com uma prévia visual do HTML gerado em tempo real.
+Use `{nome}`, `{codigos}`, `{remetente}` e `{destinatario}` para inserir dados
+automaticamente em cada e-mail. A opção **Simular envios** fica marcada por
+padrão: ela gera o relatório e atualiza a tabela sem disparar mensagens reais.
+Para um envio real, desmarque a opção, informe a senha SMTP e confirme a ação.
+O envio acontece em segundo plano, então a janela permanece responsiva e pode
+ser interrompido entre mensagens ou durante as pausas anti-spam.
+
+O seletor **Tema** no cabeçalho alterna entre as paletas **Claro** (branco,
+cinza suave, transparências e laranja) e **Escuro** (preto, cinza, transparências
+e laranja). A aparência acrílica é criada pelas superfícies translúcidas e pelo
+contraste entre os painéis, sem alterar a lógica do aplicativo.
 
 ---
 
@@ -100,22 +125,24 @@ João Pereira;joao@example.com;5793, 0704;Sucesso;2026-08-28 10:15:30;Enviado co
 
 ---
 
-## Mensagem de E-mail (HTML)
+## Mensagem de E-mail (Markdown convertido para HTML)
 
-Os participantes recebem uma mensagem formatada com o seguinte padrão:
+Na interface gráfica, o corpo da mensagem é escrito em Markdown e convertido
+automaticamente para HTML antes do envio. O modelo padrão é:
 
-```html
-<html>
-<body>
-    <p>Olá, <strong>{nome}</strong>!</p>
-    <p>Agradecemos pela realização da matrícula.</p>
-    <p>Você recebeu os seguintes números para participar do nosso sorteio:</p>
-    <h2>{numeros_formatados}</h2>
-    <p>Guarde estes números.</p>
-    <br>
-    <p>Atenciosamente,<br><strong>Colégio</strong></p>
-</body>
-</html>
+```markdown
+Olá, **{nome}**!
+
+Agradecemos pela realização da matrícula.
+
+Você recebeu os seguintes números para participar do nosso sorteio:
+
+## {codigos}
+
+Guarde estes números.
+
+Atenciosamente,
+**Colégio**
 ```
 
 ---
@@ -155,6 +182,7 @@ uv run ruff check    # Linter de código
 ```
 Giveaways_Tools/
 ├── main.py              # Ponto de entrada raiz do script
+├── main_ui.py            # Ponto de entrada da interface gráfica PyQt
 ├── codigos_emitidos.json# Registro persistente de códigos sorteados
 ├── pyproject.toml       # Dependências e configurações do projeto
 ├── README.md            # Documentação completa
@@ -163,6 +191,7 @@ Giveaways_Tools/
 │       ├── __init__.py   # Metadados do pacote
 │       ├── __main__.py   # CLI por argumentos e diálogo visual
 │       ├── main.py       # Fluxo interativo completo (envio, rate limit, tqdm)
+│       ├── ui.py         # Interface gráfica (importação, revisão e envio)
 │       ├── core.py       # Algoritmo de sorteio e persistência
 │       ├── io.py         # Leitura de planilhas e exportação de CSVs/Relatórios
 │       └── smtp.py       # Envio de e-mails HTML via SMTP

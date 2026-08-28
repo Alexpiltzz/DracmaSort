@@ -14,7 +14,7 @@ def test_read_csv_semicolon(tmp_path):
     src = tmp_path / "entrada.csv"
     src.write_text("Nome;E-mail;Quantidade\nMaria;maria@ex.com;2\n", encoding="utf-8-sig")
     records, warnings = read_spreadsheet(src)
-    assert records == [{"nome": "Maria", "email": "maria@ex.com", "quantidade": 2}]
+    assert records == [{"nome": "Maria", "email": "maria@ex.com", "quantidade": 2, "email_valido": True}]
     assert warnings == []
 
 
@@ -29,7 +29,8 @@ def test_read_csv_skips_invalid_rows(tmp_path):
         encoding="utf-8",
     )
     records, warnings = read_spreadsheet(src)
-    assert [record["nome"] for record in records] == ["Ana"]
+    assert [record["nome"] for record in records] == ["Ana", "Carlos"]
+    assert [record["email_valido"] for record in records] == [True, False]
     assert len(warnings) == 3
 
 
@@ -48,7 +49,7 @@ def test_read_xlsx(tmp_path):
     src = tmp_path / "entrada.xlsx"
     workbook.save(src)
     records, warnings = read_spreadsheet(src)
-    assert records == [{"nome": "João", "email": "joao@ex.com", "quantidade": 3}]
+    assert records == [{"nome": "João", "email": "joao@ex.com", "quantidade": 3, "email_valido": True}]
     assert warnings == []
 
 
@@ -85,4 +86,3 @@ def test_write_report_csv_e_path(tmp_path):
     text = rep_path.read_text(encoding="utf-8-sig")
     assert "Nome;E-mail;Códigos;Status;Data_Hora;Detalhes" in text
     assert "Sucesso" in text
-

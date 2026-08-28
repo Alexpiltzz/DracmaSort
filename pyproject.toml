@@ -9,7 +9,9 @@ description = "Gera códigos únicos de sorteio a partir de planilhas de partici
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "Markdown>=3.8.2",
     "openpyxl>=3.1.5",
+    "PyQt6>=6.9.1",
     "tqdm>=4.70.0",
 ]
 
@@ -22,6 +24,7 @@ dev = [
 [project.scripts]
 gerador-codigos = "code_gen.__main__:main"
 gerador-interativo = "code_gen.main:main"
+gerador-grafico = "code_gen.ui:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/code_gen"]

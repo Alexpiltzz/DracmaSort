@@ -13,19 +13,23 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+import markdown as markdown_lib
+
+from .runtime import app_root
+
 _PREFIX = "GIVEAWAY_SMTP_"
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 _DEFAULT_HOST = "smtp.office365.com"
 _DEFAULT_PORT = 587
 _DEFAULT_LOGIN = "alex.fritsche@adm.educadventista.org"
 _DEFAULT_FROM = "dpcab.anc@adm.educadventista.org"
 _DEFAULT_TO = "alexpiltz.fritsche@gmail.com"
+_DEFAULT_SUBJECT = "Seus números para o sorteio"
 
 
 def project_root() -> Path:
     """Raiz do projeto, pasta que contém o ``.env`` e o ``pyproject.toml``."""
-    return _PROJECT_ROOT
+    return app_root()
 
 
 def load_env_file(path: Path | None = None) -> None:
@@ -74,24 +78,77 @@ class SmtpConfig:
         return bool(self.password and self.to_addr)
 
 
+def markdown_to_html(markdown_text: str) -> str:
+    """Converte Markdown em HTML com as extensões usadas na UI."""
+    return markdown_lib.markdown(markdown_text, extensions=["extra", "sane_lists"])
+
+
+def _replace_placeholders(text: str, replacements: dict[str, str]) -> str:
+    rendered = text
+    for placeholder, value in replacements.items():
+        rendered = rendered.replace(placeholder, value)
+    return rendered
+
+
+def build_custom_message(
+    subject: str,
+    body: str,
+    *,
+    nome: str,
+    remetente: str,
+    destinatario: str,
+    codigos: str = "",
+) -> MIMEMultipart:
+    """Monta uma mensagem editável da UI, convertendo Markdown para HTML."""
+    return montar_mensagem_html(
+        nome,
+        remetente,
+        destinatario,
+        numeros=codigos,
+        subject=subject,
+        body=body,
+    )
+
+
 def montar_mensagem_html(
     nome: str,
     from_addr: str,
     to_addr: str,
     numeros: list[str] | str | None = None,
+    *,
+    subject: str = _DEFAULT_SUBJECT,
+    body: str | None = None,
 ) -> MIMEMultipart:
-    """Monta a mensagem de e-mail em HTML (opcionalmente com os números do sorteio)."""
+    """Monta a mensagem de e-mail em HTML.
+
+    Quando ``body`` é informado, ele é tratado como Markdown editável com os
+    placeholders ``{nome}``, ``{codigos}``, ``{remetente}`` e
+    ``{destinatario}``. Caso contrário, mantém o comportamento padrão do
+    fluxo de terminal, usando o texto do sorteio ou a mensagem de teste.
+    """
+    if isinstance(numeros, list):
+        numeros_formatados = ", ".join(numeros)
+    elif numeros is None:
+        numeros_formatados = ""
+    else:
+        numeros_formatados = str(numeros)
+
+    replacements = {
+        "{nome}": nome,
+        "{codigos}": numeros_formatados,
+        "{remetente}": from_addr,
+        "{destinatario}": to_addr,
+    }
+    rendered_subject = _replace_placeholders(subject, replacements)
+
     msg = MIMEMultipart()
     msg["From"] = from_addr
     msg["To"] = to_addr
-    msg["Subject"] = "Seus números para o sorteio"
+    msg["Subject"] = rendered_subject
 
-    if numeros:
-        if isinstance(numeros, list):
-            numeros_formatados = ", ".join(numeros)
-        else:
-            numeros_formatados = str(numeros)
-
+    if body is not None:
+        corpo = markdown_to_html(_replace_placeholders(body, replacements))
+    elif numeros_formatados:
         corpo = f"""
     <html>
     <body>

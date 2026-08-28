@@ -49,7 +49,6 @@ def _confirm(question: str, default_no: bool = True) -> bool:
         return answer in {"s", "sim", "y", "yes"}
     return answer not in {"n", "nao", "não", "no"}
 
-
 def _prompt_credentials(config: SmtpConfig) -> SmtpConfig:
     """Solicita credenciais SMTP via CLI interativo."""
     print("\n--- Credenciais SMTP ---")
@@ -103,9 +102,14 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
         print("Nenhuma linha válida encontrada para processamento.")
         return None
 
+    valid_records = [record for record in records if bool(record.get("email_valido", True))]
+    if not valid_records:
+        print("Nenhum e-mail válido encontrado para gerar códigos.")
+        return None
+
     registry = CodeRegistry(default_registry_path())
     used_codes = registry.load()
-    quantities = [record["quantidade"] for record in records]
+    quantities = [record["quantidade"] for record in valid_records]
 
     try:
         batches = generate_codes(quantities, used_codes)
@@ -115,7 +119,7 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
 
     rows = [
         {"Nome": record["nome"], "E-mail": record["email"], "Códigos": ", ".join(codes)}
-        for record, codes in zip(records, batches, strict=True)
+        for record, codes in zip(valid_records, batches, strict=True)
     ]
     output_path = default_output_path(input_path)
     write_output_csv(output_path, rows)
@@ -123,7 +127,7 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
     newly_used = {int(code) for codes in batches for code in codes}
     registry.save(used_codes | newly_used)
 
-    print(f"\n{len(records)} pessoas atendidas, {sum(quantities)} códigos gerados.")
+    print(f"\n{len(valid_records)} pessoas atendidas, {sum(quantities)} códigos gerados.")
     print(f"Saída: {output_path}")
     print(f"Registro atualizado: {registry.path}\n")
     print("Linhas geradas:")
