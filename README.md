@@ -1,60 +1,66 @@
 # Giveaways Tools — Gerador de Códigos de Sorteio
 
-Gera códigos de sorteio únicos (4 dígitos, de `0001` a `9999`) a partir de uma
-planilha de participantes com nome, e-mail e a quantidade de códigos de cada um.
-Os códigos saem em um CSV separado, prontos para envio aos participantes.
+Gera códigos de sorteio únicos (4 dígitos, de `0001` a `9999`) a partir de uma planilha de participantes com nome, e-mail e a quantidade de códigos de cada um. Os códigos saem em um CSV de saída e são enviados por e-mail com controle anti-spam, relatório de envio em CSV e barra de progresso com previsão de entrega (ETA).
+
+---
 
 ## Recursos
 
-- Aceita planilhas **Excel (.xlsx)** ou **CSV (.csv)** — o formato é detectado automaticamente
-  (o CSV aceita vírgula ou ponto-e-vírgula).
-- **Seleção manual do arquivo** por janela nativa do Windows (tkinter), com opção de
-  passar o caminho como argumento.
-- Códigos **aleatórios e sem repetição**, inclusive entre execuções diferentes:
-  os códigos usados ficam registrados em `codigos_emitidos.json`.
-- Respeita a coluna de **quantidade** de cada participante.
-- Saída em CSV com delimitador `;` e UTF-8 com BOM, compatível com Excel pt-BR.
+- Aceita planilhas **Excel (.xlsx)** ou **CSV (.csv)** — o formato é detectado automaticamente (aceita `;` ou `,` e encodings `utf-8-sig`/`cp1252`).
+- **Seleção manual do arquivo** por janela nativa do Windows (Tkinter) ou via linha de comando (`--arquivo`).
+- **Códigos aleatórios e sem repetição**, inclusive entre execuções diferentes: os códigos usados ficam salvos em `codigos_emitidos.json`.
+- **Login Interativo via CLI**: Solicita login, e-mail de origem (caixa compartilhada) e senha (com mascaramento seguro) na execução, com opção de usar o `.env` como fallback ao pressionar Enter.
+- **Relatórios de Envio (CSV)**: Gera automaticamente um arquivo `relatorio_envio_YYYYMMDD_HHMMSS.csv` com o status de cada participante (`Sucesso`, `Falha` ou `Rejeitado`), data/hora e detalhes do disparo.
+- **Proteção Anti-Spam / Rate Limiting**:
+  - Delays aleatórios entre envios (7 a 10 segundos).
+  - Pausa de segurança de **5 a 10 minutos** a cada **50 e-mails enviados** para prevenir bloqueios SMTP.
+- **Barra de Progresso com Previsão (tqdm)**: Exibe a barra de progresso em tempo real no terminal com o número de envios, tempo decorrido e tempo estimado de conclusão (ETA).
+
+---
 
 ## Requisitos
 
 - [uv](https://docs.astral.sh/uv/) (recomendado) ou Python 3.13+
-- Este projeto usa o Python 3.13 instalado no sistema (necessário pelo tkinter do diálogo).
-  A venv já está configurada para usá-lo.
+- Este projeto utiliza o Python 3.13 instalado no sistema (necessário pelo Tkinter do diálogo visual).
+
+---
 
 ## Instalação
 
-```sh
+```powershell
 uv sync
 ```
 
-Isso cria a venv em `.venv` e instala as dependências (`openpyxl`) e o comando
-`gerador-codigos`.
+Isso cria o ambiente virtual em `.venv` e instala as dependências (`openpyxl`, `tqdm`).
 
-## Como usar
+---
 
-```sh
-# Abre a janela para escolher a planilha
-uv run gerador-codigos
+## Como Usar
 
-# Ou informando o caminho da planilha
-uv run gerador-codigos --arquivo participantes.xlsx
+### 1. Forma Direta (Recomendada)
 
-# Alternativa direta ao módulo
-uv run python -m code_gen
+```powershell
+# Execução interativa (abre a janela para selecionar a planilha)
+uv run python main.py
+
+# Informando o arquivo diretamente
+uv run python main.py --arquivo participantes.xlsx
+
+# Modo teste (envia apenas 1 e-mail de validação para GIVEAWAY_SMTP_TO)
+uv run python main.py --arquivo participantes.xlsx --teste
 ```
 
-### Opções
+### 2. Atalho Registrado no CLI
 
-| Opção | Descrição |
-|---|---|
-| `--arquivo` | Caminho da planilha de entrada (.xlsx ou .csv). Se omitido, abre o seletor de arquivos. |
-| `--saida` | Caminho do CSV de saída. Padrão: `codigos_sorteados_<data>_<hora>.csv` na pasta da planilha. |
-| `--registro` | Caminho do arquivo de códigos usados. Padrão: `codigos_emitidos.json` na raiz do projeto. |
+```powershell
+uv run gerador-interativo --arquivo participantes.xlsx
+```
 
-## Formato da planilha de entrada
+---
 
-A primeira linha deve conter os cabeçalhos. Os nomes das colunas são flexíveis
-(sem diferenciar maiúsculas ou acentos):
+## Formato da Planilha de Entrada
+
+A primeira linha deve conter os cabeçalhos. Os nomes das colunas são flexíveis (sem diferenciar maiúsculas ou acentos):
 
 - **Nome** — também aceita `name`, `participante`
 - **E-mail** — também aceita `email`, `correio`
@@ -68,13 +74,15 @@ Ana Souza;ana@example.com;3
 João Pereira;joao@example.com;2
 ```
 
-Linhas inválidas (nome vazio, e-mail sem formato válido, quantidade ausente ou
-menor que 1) são ignoradas e listadas como avisos na saída do terminal.
+Linhas inválidas (nome vazio, e-mail sem formato válido ou quantidade menor que 1) são ignoradas com avisos no terminal.
 
-## Formato da saída
+---
 
-`codigos_sorteados_<data>_<hora>.csv`, uma linha por participante com os códigos
-separados por vírgula:
+## Formato das Saídas
+
+Ao final da execução, são gerados no mesmo diretório da planilha de entrada:
+
+### 1. CSV dos Códigos Sorteados (`codigos_sorteados_<data>_<hora>.csv`)
 
 ```csv
 Nome;E-mail;Códigos
@@ -82,114 +90,81 @@ Ana Souza;ana@example.com;4631, 3087, 1050
 João Pereira;joao@example.com;5793, 0704
 ```
 
-## Envio de e-mails (SMTP – Outlook/Office 365)
+### 2. CSV do Relatório de Envio (`relatorio_envio_<data>_<hora>.csv`)
 
-O envio dos códigos aos participantes é feito via **SMTP do Outlook/Office 365**
-(`smtp.office365.com:587` com TLS). A autenticação usa a conta de um remetente que
-possui permissão de **"enviar como"** sobre a caixa compartilhada de onde os
-e-mails são originados.
-
-| Papel | Valor |
-|---|---|
-| Host | `smtp.office365.com` |
-| Porta | `587` |
-| Login (autenticação) | conta com permissão de envio sobre a caixa compartilhada (ex.: `alex.fritsche@adm.educadventista.org`) |
-| De (`From`, caixa compartilhada) | ex.: `dpcab.anc@adm.educadventista.org` |
-| Para (`To`) | e-mail do participante |
-
-A implementação fica no módulo `src/code_gen/smtp.py`, com as funções
-`montar_mensagem_html`, `enviar_email` e a configuração tipada `SmtpConfig`.
-
-## Fluxo completo (interactive CLI) — `main.py`
-
-Além da CLI por argumentos (`__main__.py`), há um fluxo **interativo** que unifica
-todo o pipeline em um só lugar: seleção da planilha → leitura → geração dos códigos
-→ escrita do CSV → **envio dos e-mails**. Ele conversa com você no terminal
-(passos confirmados um a um).
-
-```sh
-# Fluxo interativo com diálogo para escolher a planilha
-uv run gerador-interativo
-
-# Informando o arquivo antecipadamente (evita o seletor)
-uv run gerador-interativo --arquivo participantes.xlsx
-
-# Envia apenas um e-mail de teste (para GIVEAWAY_SMTP_TO), sem disparar para todos
-uv run gerador-interativo --arquivo participantes.xlsx --teste
-
-# Alternativa direta ao módulo
-uv run python -m code_gen.main
+```csv
+Nome;E-mail;Códigos;Status;Data_Hora;Detalhes
+Ana Souza;ana@example.com;4631, 3087, 1050;Sucesso;2026-08-28 10:15:20;Enviado com sucesso
+João Pereira;joao@example.com;5793, 0704;Sucesso;2026-08-28 10:15:30;Enviado com sucesso
 ```
 
-### Modos de envio
+---
 
-| Modo | Comportamento |
-|---|---|
-| Padrão | Após gerar o CSV, pergunta a confirmação e envia **um e-mail por participante** com seus códigos. |
-| `--teste` | Envia **um único e-mail de teste** (sem códigos) para `GIVEAWAY_SMTP_TO` — ideal para validar o pipeline sem incomodar ninguém. |
-| Sem senha | Sem `GIVEAWAY_SMTP_PASS`, roda em **dry-run**: gera tudo, mas apenas exibe a mensagem que seria enviada (nenhum e-mail real). |
+## Mensagem de E-mail (HTML)
 
-### Configuração (`SmtpConfig`)
+Os participantes recebem uma mensagem formatada com o seguinte padrão:
 
-As configurações são lidas de **variáveis de ambiente** ou de um arquivo **`.env`**
-na raiz do projeto (carregado automaticamente pelo módulo). Variáveis de ambiente
-declaradas na sessão prevalecem sobre o `.env`.
+```html
+<html>
+<body>
+    <p>Olá, <strong>{nome}</strong>!</p>
+    <p>Agradecemos pela realização da matrícula.</p>
+    <p>Você recebeu os seguintes números para participar do nosso sorteio:</p>
+    <h2>{numeros_formatados}</h2>
+    <p>Guarde estes números.</p>
+    <br>
+    <p>Atenciosamente,<br><strong>Colégio</strong></p>
+</body>
+</html>
+```
 
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `GIVEAWAY_SMTP_HOST` | `smtp.office365.com` | Host SMTP |
-| `GIVEAWAY_SMTP_PORT` | `587` | Porta SMTP |
-| `GIVEAWAY_SMTP_LOGIN` | `alex.fritsche@adm.educadventista.org` | Conta usada na autenticação |
-| `GIVEAWAY_SMTP_PASS` | *(obrigatória)* | Senha da conta de login |
-| `GIVEAWAY_SMTP_FROM` | `dpcab.anc@adm.educadventista.org` | Caixa compartilhada de origem |
-| `GIVEAWAY_SMTP_TO` | `alexpiltz.fritsche@gmail.com` | E-mail de destino |
+---
 
-Crie um arquivo `.env` na raiz do projeto com suas credenciais pessoais (modelo em
-`.env.example`). O `.env` está no `.gitignore` — **nunca commite a senha**:
+## Configuração do Envio (`.env` opcional)
+
+As credenciais SMTP podem ser informadas no momento da execução (CLI interativo) ou pré-configuradas no arquivo `.env` na raiz do projeto:
 
 ```dotenv
+GIVEAWAY_SMTP_HOST=smtp.office365.com
+GIVEAWAY_SMTP_PORT=587
 GIVEAWAY_SMTP_LOGIN=alex.fritsche@adm.educadventista.org
-GIVEAWAY_SMTP_PASS=SUA_SENHA
+GIVEAWAY_SMTP_PASS=SUA_SENHA_AQUI
 GIVEAWAY_SMTP_FROM=dpcab.anc@adm.educadventista.org
 GIVEAWAY_SMTP_TO=alexpiltz.fritsche@gmail.com
 ```
 
-### Como testar
+---
 
-O envio real é coberto pelo teste `tests/test_smtp.py`, que usa as credenciais do
-`.env`:
+## Sobre a Não-Repetição
+
+O arquivo `codigos_emitidos.json`, na raiz do projeto, guarda todos os números já sorteados (`0001` a `9999`). **Preserve este arquivo** para que os códigos nunca se repitam entre execuções futuras.
+
+---
+
+## Desenvolvimento e Testes
 
 ```powershell
-uv run pytest tests/test_smtp.py -v
+uv run pytest        # Executa a suíte de testes unitários (27 testes)
+uv run ruff check    # Linter de código
 ```
 
-Sem `GIVEAWAY_SMTP_PASS`, o teste é **pulado** (não falha). O envio usa o módulo
-padrão do Python (`smtplib`, `email`), sem dependências adicionais.
+---
 
-## Sobre a não-repetição
-
-O arquivo `codigos_emitidos.json`, na raiz do projeto, guarda todos os códigos já
-sorteados. A cada execução, apenas códigos ainda livres são sorteados. **Preserve
-esse arquivo** (ele pode ser versionado no Git ou copiado junto) para garantir que
-os códigos nunca se repitam, mesmo rodando o script novamente. Os números vão de
-`0001` a `9999` (9.999 códigos possíveis); ao esgotar, o script informa o erro.
-
-## Desenvolvimento
-
-```sh
-uv run pytest        # testes
-uv run ruff check    # lint
-```
-
-## Estrutura
+## Estrutura do Projeto
 
 ```
-src/code_gen/
-├── __init__.py   # metadados do pacote
-├── __main__.py   # CLI por argumentos + diálogo de seleção de arquivo
-├── main.py       # fluxo interativo completo (inclui envio de e-mails)
-├── core.py       # geração aleatória + registro de códigos usados
-├── io.py         # leitura xlsx/csv e escrita do CSV de saída
-└── smtp.py       # envio de e-mails (SMTP Outlook/Office 365)
-tests/            # testes (pytest)
+Giveaways_Tools/
+├── main.py              # Ponto de entrada raiz do script
+├── codigos_emitidos.json# Registro persistente de códigos sorteados
+├── pyproject.toml       # Dependências e configurações do projeto
+├── README.md            # Documentação completa
+├── src/
+│   └── code_gen/
+│       ├── __init__.py   # Metadados do pacote
+│       ├── __main__.py   # CLI por argumentos e diálogo visual
+│       ├── main.py       # Fluxo interativo completo (envio, rate limit, tqdm)
+│       ├── core.py       # Algoritmo de sorteio e persistência
+│       ├── io.py         # Leitura de planilhas e exportação de CSVs/Relatórios
+│       └── smtp.py       # Envio de e-mails HTML via SMTP
+└── tests/               # Testes unitários com pytest
 ```
