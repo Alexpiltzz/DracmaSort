@@ -6,6 +6,7 @@ caixa compartilhada de origem. As configurações são lidas de variáveis de
 ambiente e, quando presente, de um arquivo ``.env`` na raiz do projeto.
 """
 
+import html
 import os
 import smtplib
 from dataclasses import dataclass
@@ -15,15 +16,15 @@ from pathlib import Path
 
 import markdown as markdown_lib
 
-from .runtime import app_root
+from code_gen.runtime import app_root
 
 _PREFIX = "GIVEAWAY_SMTP_"
 
 _DEFAULT_HOST = "smtp.office365.com"
 _DEFAULT_PORT = 587
-_DEFAULT_LOGIN = "alex.fritsche@adm.educadventista.org"
-_DEFAULT_FROM = "dpcab.anc@adm.educadventista.org"
-_DEFAULT_TO = "alexpiltz.fritsche@gmail.com"
+_DEFAULT_LOGIN = ""
+_DEFAULT_FROM = ""
+_DEFAULT_TO = ""
 _DEFAULT_SUBJECT = "Seus números para o sorteio"
 
 
@@ -90,6 +91,12 @@ def _replace_placeholders(text: str, replacements: dict[str, str]) -> str:
     return rendered
 
 
+def _html_replace_placeholders(text: str, replacements: dict[str, str]) -> str:
+    """Substitui placeholders escapando os valores para uso em corpo HTML."""
+    escaped = {key: html.escape(value) for key, value in replacements.items()}
+    return _replace_placeholders(text, escaped)
+
+
 def build_custom_message(
     subject: str,
     body: str,
@@ -147,13 +154,15 @@ def montar_mensagem_html(
     msg["Subject"] = rendered_subject
 
     if body is not None:
-        corpo = markdown_to_html(_replace_placeholders(body, replacements))
+        corpo = markdown_to_html(_html_replace_placeholders(body, replacements))
     elif numeros_formatados:
+        nome_html = html.escape(nome)
+        numeros_html = html.escape(numeros_formatados)
         corpo = f"""
     <html>
     <body>
 
-        <p>Olá, <strong>{nome}</strong>!</p>
+        <p>Olá, <strong>{nome_html}</strong>!</p>
 
         <p>
         Agradecemos pela realização da matrícula.
@@ -164,7 +173,7 @@ def montar_mensagem_html(
         </p>
 
         <h2>
-            {numeros_formatados}
+            {numeros_html}
         </h2>
 
         <p>
@@ -182,11 +191,13 @@ def montar_mensagem_html(
     </html>
     """
     else:
+        nome_html = html.escape(nome)
+        remetente_html = html.escape(from_addr)
         corpo = f"""
         <html><body>
-            <p>Olá, <strong>{nome}</strong>!</p>
+            <p>Olá, <strong>{nome_html}</strong>!</p>
             <p>Este é um e-mail de teste enviado a partir da caixa compartilhada
-            <strong>{from_addr}</strong>.</p>
+            <strong>{remetente_html}</strong>.</p>
             <p>Se você recebeu esta mensagem, a configuração de envio está funcionando.</p>
         </body></html>
         """

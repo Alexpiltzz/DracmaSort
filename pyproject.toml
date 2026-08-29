@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "giveaways-tools"
-version = "0.1.1"
+version = "0.1.2"
 description = "Gera códigos únicos de sorteio a partir de planilhas de participantes."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,10 +24,10 @@ dev = [
 [project.scripts]
 gerador-codigos = "code_gen.__main__:main"
 gerador-interativo = "code_gen.main:main"
-gerador-grafico = "code_gen.ui:main"
+gerador-grafico = "gui.ui:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/code_gen"]
+packages = ["src/code_gen", "src/delivery", "src/gui"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

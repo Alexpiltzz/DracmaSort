@@ -10,11 +10,13 @@ Opcionalmente:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 DEFAULT_APP_NAME = "DracmaSort"
+ASSETS_DATA = "assets" + os.pathsep + "assets"
 
 
 def _cleanup_artifacts(repo_root: Path, name: str, icon_path: Path) -> None:
@@ -66,6 +68,8 @@ def build_executable(name: str, *, keep_artifacts: bool = False) -> int:
         "src",
         "--collect-all",
         "PyQt6",
+        "--add-data",
+        ASSETS_DATA,
         "main_ui.py",
     ]
     result = subprocess.run(cmd, cwd=repo_root, check=False)

@@ -11,4 +11,5 @@ uv run --with pyinstaller pyinstaller `
     --name $Name `
     --paths src `
     --collect-all PyQt6 `
+    --add-data "assets;assets" `
     main_ui.py

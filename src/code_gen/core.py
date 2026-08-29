@@ -7,6 +7,8 @@ from pathlib import Path
 MIN_CODE = 1
 MAX_CODE = 9999
 
+CODE_DOMAIN = range(MIN_CODE, MAX_CODE + 1)
+
 
 class NotEnoughCodesError(Exception):
     """Quantidade solicitada excede o total de códigos disponíveis."""
@@ -35,7 +37,8 @@ def format_code(number: int) -> str:
 
 
 def pool_size(used_codes: set[int]) -> int:
-    return (MAX_CODE - MIN_CODE + 1) - len(used_codes)
+    in_use = len(set(used_codes).intersection(CODE_DOMAIN))
+    return (MAX_CODE - MIN_CODE + 1) - in_use
 
 
 def generate_codes(
@@ -47,11 +50,11 @@ def generate_codes(
     requested = sum(quantities)
     if requested > pool_size(used_codes):
         raise NotEnoughCodesError(
-            f"Pedido de {requested} códigos, mas restam apenas "
-            f"{pool_size(used_codes)} disponíveis."
+            f"Pedido de {requested} códigos, mas restam apenas {pool_size(used_codes)} disponíveis."
         )
-    rng = rng or random
-    available = [n for n in range(MIN_CODE, MAX_CODE + 1) if n not in used_codes]
+    if rng is None:
+        rng = random.Random()
+    available = [n for n in CODE_DOMAIN if n not in used_codes]
     chosen = rng.sample(available, requested)
     batches = []
     position = 0

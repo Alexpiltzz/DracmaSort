@@ -9,6 +9,7 @@ __pycache__/
 # Saída do gerador
 codigos_sorteados_*.csv
 relatorio_envio_*.csv
+cache/
 
 # Artefatos de build do executável
 build/

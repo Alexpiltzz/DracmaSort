@@ -154,10 +154,10 @@ As credenciais SMTP podem ser informadas no momento da execução (CLI interativ
 ```dotenv
 GIVEAWAY_SMTP_HOST=smtp.office365.com
 GIVEAWAY_SMTP_PORT=587
-GIVEAWAY_SMTP_LOGIN=alex.fritsche@adm.educadventista.org
+GIVEAWAY_SMTP_LOGIN=seu.email@dominio.com
 GIVEAWAY_SMTP_PASS=SUA_SENHA_AQUI
-GIVEAWAY_SMTP_FROM=dpcab.anc@adm.educadventista.org
-GIVEAWAY_SMTP_TO=alexpiltz.fritsche@gmail.com
+GIVEAWAY_SMTP_FROM=caixa.compartilhada@dominio.com
+GIVEAWAY_SMTP_TO=seu.email@dominio.com
 ```
 
 ---
@@ -171,9 +171,28 @@ O arquivo `codigos_emitidos.json`, na raiz do projeto, guarda todos os números 
 ## Desenvolvimento e Testes
 
 ```powershell
-uv run pytest        # Executa a suíte de testes unitários (27 testes)
+uv run pytest        # Executa a suíte de testes unitários
 uv run ruff check    # Linter de código
 ```
+
+### Editando a Interface Gráfica
+
+A janela da Central de Sorteios é definida em `assets/main_window.ui`
+(Qt Designer) e carregada em tempo de execução. As folhas de estilo vivem em
+`assets/style_light.qss` e `assets/style_dark.qss` (tema claro/escuro).
+
+```powershell
+# Abrir o layout no Qt Designer
+uv run --with pyqt6-tools pyqt6-tools designer
+```
+
+- Os nomes dos objetos no `.ui` devem coincidir com os atributos usados no
+  Python (`theme_button`, `import_button`, ...) e com os seletores do QSS.
+- Propriedades que o `.ui` não serializa (tamanhos de splitter, stretches)
+  são reaplicadas em `_apply_runtime_geometry()`, em `src/gui/ui.py`.
+- **Assets sempre obrigatórios**: não há fallback de CSS. No desenvolvimento, o
+  `ui`/`qss` é lido de `assets/` na raiz do repositório; no executável, os
+  arquivos vêm empacotados dentro do binário (sem a pasta `assets/` ao lado).
 
 ---
 
@@ -182,18 +201,33 @@ uv run ruff check    # Linter de código
 ```
 Giveaways_Tools/
 ├── main.py              # Ponto de entrada raiz do script
-├── main_ui.py            # Ponto de entrada da interface gráfica PyQt
+├── main_ui.py           # Ponto de entrada da interface gráfica PyQt
+├── main_exe.py          # Gera o executável Windows (PyInstaller)
+├── build_main_ui.ps1    # Script alternativo de build do executável
 ├── codigos_emitidos.json# Registro persistente de códigos sorteados
 ├── pyproject.toml       # Dependências e configurações do projeto
 ├── README.md            # Documentação completa
+├── assets/              # Recursos de interface
+│   ├── main_window.ui   # Layout da janela (Qt Designer)
+│   ├── style_light.qss  # Folha de estilo do tema claro
+│   ├── style_dark.qss   # Folha de estilo do tema escuro
+│   └── png_to_ico.py    # Converte o ícone PNG em .ico (build)
 ├── src/
-│   └── code_gen/
-│       ├── __init__.py   # Metadados do pacote
-│       ├── __main__.py   # CLI por argumentos e diálogo visual
-│       ├── main.py       # Fluxo interativo completo (envio, rate limit, tqdm)
-│       ├── ui.py         # Interface gráfica (importação, revisão e envio)
-│       ├── core.py       # Algoritmo de sorteio e persistência
-│       ├── io.py         # Leitura de planilhas e exportação de CSVs/Relatórios
-│       └── smtp.py       # Envio de e-mails HTML via SMTP
+│   ├── code_gen/
+│   │   ├── __init__.py   # Metadados do pacote
+│   │   ├── __main__.py   # CLI por argumentos e diálogo visual
+│   │   ├── cli.py        # Seleção de planilha compartilhada (terminal)
+│   │   ├── main.py       # Fluxo interativo completo (envio, rate limit, tqdm)
+│   │   ├── core.py       # Algoritmo de sorteio e persistência
+│   │   ├── io.py         # Leitura de planilhas e exportação de CSVs/Relatórios
+│   │   └── runtime.py    # Resolução da raiz da aplicação
+│   ├── delivery/         # Camada de envio de e-mails (SMTP e loop em lote)
+│   │   ├── __init__.py
+│   │   ├── sender.py     # Loop de envio em lote compartilhado (TUI/UI)
+│   │   └── smtp.py       # Envio de e-mails HTML via SMTP
+│   └── gui/              # Interface gráfica PyQt
+│       ├── __init__.py
+│       ├── ui.py         # Importação, revisão e envio
+│       └── resources.py  # Resolução de assets (.ui/.qss)
 └── tests/               # Testes unitários com pytest
 ```

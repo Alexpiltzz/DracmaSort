@@ -13,7 +13,6 @@ OUTPUT_FIELDS = ["Nome", "E-mail", "Códigos"]
 REPORT_FIELDS = ["Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
 
 
-
 def _normalize(value: str) -> str:
     text = unicodedata.normalize("NFD", str(value).strip().lower())
     return "".join(char for char in text if unicodedata.category(char) != "Mn")
@@ -51,10 +50,13 @@ def _read_csv_rows(path: Path) -> list[list[str]]:
 
 def _read_xlsx_rows(path: Path) -> list[list]:
     workbook = load_workbook(path, read_only=True, data_only=True)
-    sheet = workbook.active
-    if sheet is None:
-        raise ValueError(f"A planilha {path.name} não possui planilhas ativas.")
-    return [list(row) for row in sheet.iter_rows(values_only=True)]
+    try:
+        sheet = workbook.active
+        if sheet is None:
+            raise ValueError(f"A planilha {path.name} não possui planilhas ativas.")
+        return [list(row) for row in sheet.iter_rows(values_only=True)]
+    finally:
+        workbook.close()
 
 
 def _parse_quantity(value) -> int | None:

@@ -14,7 +14,9 @@ def test_read_csv_semicolon(tmp_path):
     src = tmp_path / "entrada.csv"
     src.write_text("Nome;E-mail;Quantidade\nMaria;maria@ex.com;2\n", encoding="utf-8-sig")
     records, warnings = read_spreadsheet(src)
-    assert records == [{"nome": "Maria", "email": "maria@ex.com", "quantidade": 2, "email_valido": True}]
+    assert records == [
+        {"nome": "Maria", "email": "maria@ex.com", "quantidade": 2, "email_valido": True}
+    ]
     assert warnings == []
 
 
@@ -49,7 +51,9 @@ def test_read_xlsx(tmp_path):
     src = tmp_path / "entrada.xlsx"
     workbook.save(src)
     records, warnings = read_spreadsheet(src)
-    assert records == [{"nome": "João", "email": "joao@ex.com", "quantidade": 3, "email_valido": True}]
+    assert records == [
+        {"nome": "João", "email": "joao@ex.com", "quantidade": 3, "email_valido": True}
+    ]
     assert warnings == []
 
 
@@ -74,14 +78,16 @@ def test_write_report_csv_e_path(tmp_path):
     assert rep_path.name.startswith("relatorio_envio_")
     assert rep_path.suffix == ".csv"
 
-    rows = [{
-        "Nome": "Maria",
-        "E-mail": "m@ex.com",
-        "Códigos": "0001",
-        "Status": "Sucesso",
-        "Data_Hora": "2026-08-28 10:00:00",
-        "Detalhes": "Enviado com sucesso",
-    }]
+    rows = [
+        {
+            "Nome": "Maria",
+            "E-mail": "m@ex.com",
+            "Códigos": "0001",
+            "Status": "Sucesso",
+            "Data_Hora": "2026-08-28 10:00:00",
+            "Detalhes": "Enviado com sucesso",
+        }
+    ]
     write_report_csv(rep_path, rows)
     text = rep_path.read_text(encoding="utf-8-sig")
     assert "Nome;E-mail;Códigos;Status;Data_Hora;Detalhes" in text

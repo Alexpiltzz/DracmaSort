@@ -54,6 +54,18 @@ def test_pool_size():
     assert pool_size({1, 2}) == 9997
 
 
+def test_pool_size_ignores_out_of_range_codes():
+    assert pool_size({0, 1, 2, 10000, -5}) == 9997
+
+
+def test_generate_codes_ignores_out_of_range_used():
+    batches = generate_codes([2], {0, 10000, -1}, rng=random.Random(13))
+    flat = [code for batch in batches for code in batch]
+    numbers = {int(code) for code in flat}
+    assert all(MIN_CODE <= number <= MAX_CODE for number in numbers)
+    assert len(numbers) == len(flat)
+
+
 def test_registry_roundtrip(tmp_path):
     registry = CodeRegistry(tmp_path / "codigos_emitidos.json")
     assert registry.load() == set()

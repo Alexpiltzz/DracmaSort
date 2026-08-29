@@ -1,0 +1,732 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1320</width>
+    <height>820</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Central de Sorteios</string>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>1100</width>
+    <height>720</height>
+   </size>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="root_layout">
+    <property name="spacing">
+     <number>16</number>
+    </property>
+    <property name="leftMargin">
+     <number>28</number>
+    </property>
+    <property name="topMargin">
+     <number>24</number>
+    </property>
+    <property name="rightMargin">
+     <number>28</number>
+    </property>
+    <property name="bottomMargin">
+     <number>24</number>
+    </property>
+    <item>
+     <layout class="QHBoxLayout" name="header_layout">
+      <item>
+       <layout class="QVBoxLayout" name="title_box">
+        <item>
+         <widget class="QLabel" name="title">
+          <property name="text">
+           <string>Central de Sorteios</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="subtitle">
+          <property name="text">
+           <string>Importe, confira os códigos e acompanhe cada envio em um único lugar.</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+<item alignment="Qt::AlignTop">
+        <widget class="QToolButton" name="theme_button">
+        <property name="text">
+         <string>☀</string>
+        </property>
+        <property name="toolTip">
+         <string>Alternar para o tema escuro</string>
+        </property>
+        <property name="accessibleName">
+         <string>Alternar tema claro e escuro</string>
+        </property>
+        <property name="autoRaise">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+<item alignment="Qt::AlignTop">
+        <widget class="QLabel" name="mode_badge">
+        <property name="text">
+         <string>SIMULAÇÃO ATIVA</string>
+        </property>
+        <property name="real" stdset="0">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+<item>
+      <widget class="QTabWidget" name="tabs">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="operation_tab">
+       <attribute name="title">
+        <string>Operação</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="operation_layout">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>16</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <layout class="QHBoxLayout" name="actions_layout">
+          <item>
+           <widget class="QPushButton" name="import_button">
+            <property name="text">
+             <string>Importar planilha</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="generate_button">
+            <property name="text">
+             <string>Gerar códigos</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="export_button">
+            <property name="text">
+             <string>Exportar CSV</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="open_folder_button">
+            <property name="text">
+             <string>Abrir pasta</string>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="actions_spacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QGridLayout" name="metrics_layout">
+          <property name="horizontalSpacing">
+           <number>12</number>
+          </property>
+          <item row="0" column="0">
+           <widget class="QFrame" name="participants_metric">
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <layout class="QVBoxLayout" name="participants_metric_layout">
+             <property name="leftMargin">
+              <number>16</number>
+             </property>
+             <property name="topMargin">
+              <number>12</number>
+             </property>
+             <property name="rightMargin">
+              <number>16</number>
+             </property>
+             <property name="bottomMargin">
+              <number>12</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="participants_metric_label">
+               <property name="text">
+                <string>PARTICIPANTES</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="participants_metric_value">
+               <property name="text">
+                <string>0</string>
+               </property>
+               <property name="class" stdset="0">
+                <string>value</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QFrame" name="codes_metric">
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <layout class="QVBoxLayout" name="codes_metric_layout">
+             <property name="leftMargin">
+              <number>16</number>
+             </property>
+             <property name="topMargin">
+              <number>12</number>
+             </property>
+             <property name="rightMargin">
+              <number>16</number>
+             </property>
+             <property name="bottomMargin">
+              <number>12</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="codes_metric_label">
+               <property name="text">
+                <string>CÓDIGOS GERADOS</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="codes_metric_value">
+               <property name="text">
+                <string>0</string>
+               </property>
+               <property name="class" stdset="0">
+                <string>value</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item row="0" column="2">
+           <widget class="QFrame" name="available_metric">
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <layout class="QVBoxLayout" name="available_metric_layout">
+             <property name="leftMargin">
+              <number>16</number>
+             </property>
+             <property name="topMargin">
+              <number>12</number>
+             </property>
+             <property name="rightMargin">
+              <number>16</number>
+             </property>
+             <property name="bottomMargin">
+              <number>12</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="available_metric_label">
+               <property name="text">
+                <string>CÓDIGOS DISPONÍVEIS</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="available_metric_value">
+               <property name="text">
+                <string>—</string>
+               </property>
+               <property name="class" stdset="0">
+                <string>value</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QSplitter" name="splitter">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <widget class="QGroupBox" name="input_group">
+           <property name="title">
+            <string>1. Participantes importados</string>
+           </property>
+           <layout class="QVBoxLayout" name="input_group_layout">
+            <item>
+             <widget class="QTableWidget" name="input_table">
+              <property name="editTriggers">
+               <set>QAbstractItemView::NoEditTriggers</set>
+              </property>
+              <property name="alternatingRowColors">
+               <bool>true</bool>
+              </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::SingleSelection</enum>
+              </property>
+              <property name="selectionBehavior">
+               <enum>QAbstractItemView::SelectRows</enum>
+              </property>
+              <attribute name="horizontalHeaderStretchLastSection">
+               <bool>false</bool>
+              </attribute>
+              <attribute name="verticalHeaderVisible">
+               <bool>false</bool>
+              </attribute>
+              <column>
+               <property name="text">
+                <string>Nome</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>E-mail</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Quantidade</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QGroupBox" name="output_group">
+           <property name="title">
+            <string>2. Códigos e status de envio</string>
+           </property>
+           <layout class="QVBoxLayout" name="output_group_layout">
+            <item>
+             <widget class="QTableWidget" name="output_table">
+              <property name="editTriggers">
+               <set>QAbstractItemView::NoEditTriggers</set>
+              </property>
+              <property name="alternatingRowColors">
+               <bool>true</bool>
+              </property>
+              <property name="selectionMode">
+               <enum>QAbstractItemView::SingleSelection</enum>
+              </property>
+              <property name="selectionBehavior">
+               <enum>QAbstractItemView::SelectRows</enum>
+              </property>
+              <attribute name="horizontalHeaderStretchLastSection">
+               <bool>false</bool>
+              </attribute>
+              <attribute name="verticalHeaderVisible">
+               <bool>false</bool>
+              </attribute>
+              <column>
+               <property name="text">
+                <string>Nome</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>E-mail</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Códigos</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Status</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
+                <string>Detalhes</string>
+               </property>
+              </column>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSplitter" name="lower_splitter">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <widget class="QGroupBox" name="warnings_group">
+           <property name="title">
+            <string>Validação e atividade</string>
+           </property>
+           <layout class="QVBoxLayout" name="warnings_group_layout">
+            <item>
+             <widget class="QPlainTextEdit" name="activity_log">
+              <property name="plainText">
+               <string/>
+              </property>
+              <property name="placeholderText">
+               <string>Avisos da planilha e andamento do envio aparecerão aqui.</string>
+              </property>
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+          <widget class="QGroupBox" name="smtp_group">
+           <property name="title">
+            <string>3. Configuração e envio</string>
+           </property>
+           <layout class="QVBoxLayout" name="smtp_group_layout">
+            <item>
+             <layout class="QFormLayout" name="smtp_form">
+              <item row="0" column="0">
+               <widget class="QLabel" name="host_label">
+                <property name="text">
+                 <string>Servidor SMTP</string>
+                </property>
+               </widget>
+              </item>
+              <item row="0" column="1">
+               <widget class="QLineEdit" name="host_input"/>
+              </item>
+              <item row="1" column="0">
+               <widget class="QLabel" name="port_label">
+                <property name="text">
+                 <string>Porta</string>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="1">
+               <widget class="QSpinBox" name="port_input">
+                <property name="minimum">
+                 <number>1</number>
+                </property>
+                <property name="maximum">
+                 <number>65535</number>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="0">
+               <widget class="QLabel" name="login_label">
+                <property name="text">
+                 <string>Login</string>
+                </property>
+               </widget>
+              </item>
+              <item row="2" column="1">
+               <widget class="QLineEdit" name="login_input"/>
+              </item>
+              <item row="3" column="0">
+               <widget class="QLabel" name="password_label">
+                <property name="text">
+                 <string>Senha</string>
+                </property>
+               </widget>
+              </item>
+              <item row="3" column="1">
+               <widget class="QLineEdit" name="password_input">
+                <property name="echoMode">
+                 <enum>QLineEdit::Password</enum>
+                </property>
+               </widget>
+              </item>
+              <item row="4" column="0">
+               <widget class="QLabel" name="from_label">
+                <property name="text">
+                 <string>E-mail remetente</string>
+                </property>
+               </widget>
+              </item>
+              <item row="4" column="1">
+               <widget class="QLineEdit" name="from_input"/>
+              </item>
+              <item row="5" column="0">
+               <widget class="QLabel" name="test_to_label">
+                <property name="text">
+                 <string>Destino do teste</string>
+                </property>
+               </widget>
+              </item>
+              <item row="5" column="1">
+               <widget class="QLineEdit" name="test_to_input"/>
+              </item>
+             </layout>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="simulate_checkbox">
+              <property name="text">
+               <string>Simular envios (não envia mensagens reais)</string>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <layout class="QHBoxLayout" name="send_actions">
+              <item>
+               <widget class="QPushButton" name="test_button">
+                <property name="text">
+                 <string>Enviar teste</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="send_button">
+                <property name="text">
+                 <string>Enviar para participantes</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPushButton" name="cancel_button">
+                <property name="text">
+                 <string>Interromper</string>
+                </property>
+                <property name="enabled">
+                 <bool>false</bool>
+                </property>
+               </widget>
+              </item>
+             </layout>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QProgressBar" name="progress">
+          <property name="visible">
+           <bool>false</bool>
+          </property>
+          <property name="value">
+           <number>0</number>
+          </property>
+          <property name="textVisible">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="message_tab">
+       <attribute name="title">
+        <string>Mensagem</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="message_layout">
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>16</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="messageIntro">
+          <property name="text">
+           <string>Escreva em Markdown à esquerda e confira a prévia visual do HTML à direita. As alterações serão usadas na simulação, no teste e no envio real.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="subject_row">
+          <item>
+           <widget class="QLabel" name="subject_label">
+            <property name="text">
+             <string>Assunto</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLineEdit" name="subject_input">
+            <property name="text">
+             <string>Seus números para o sorteio</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="reset_button">
+            <property name="text">
+             <string>Restaurar modelo original</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QSplitter" name="editor_splitter">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+<widget class="QWidget" name="editor_panel">
+            <layout class="QVBoxLayout" name="editor_layout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>8</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+<widget class="QLabel" name="panelLabel">
+               <property name="text">
+                <string>Markdown</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPlainTextEdit" name="message_input">
+              <property name="plainText">
+               <string>Olá, **{nome}**!
+
+Agradecemos pela realização da matrícula.
+
+Você recebeu os seguintes números para participar do nosso sorteio:
+
+## {codigos}
+
+Guarde estes números.
+
+Atenciosamente,
+**Colégio**</string>
+              </property>
+              <property name="lineWrapMode">
+               <enum>QPlainTextEdit::WidgetWidth</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+<widget class="QWidget" name="preview_panel">
+            <layout class="QVBoxLayout" name="preview_layout">
+             <property name="leftMargin">
+              <number>8</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+<widget class="QLabel" name="panelLabel2">
+               <property name="text">
+                <string>Prévia do e-mail</string>
+               </property>
+              </widget>
+            </item>
+            <item>
+             <widget class="QTextBrowser" name="message_preview">
+              <property name="openExternalLinks">
+               <bool>false</bool>
+              </property>
+              <property name="readOnly">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="placeholderHelp">
+          <property name="text">
+           <string>Campos disponíveis: {nome}  {codigos}  {remetente}  {destinatario}. Use negrito, itálico, títulos, listas e links em Markdown.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar">
+   <property name="sizeGripEnabled">
+    <bool>true</bool>
+   </property>
+   <widget class="QLabel" name="status_label">
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -2,7 +2,7 @@
 
 import sys
 
-from code_gen.ui import main
+from gui.ui import main
 
 if __name__ == "__main__":
     sys.exit(main())

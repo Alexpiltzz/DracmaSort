@@ -13,32 +13,28 @@ Modos de envio:
     - sem GIVEAWAY_SMTP_PASS: executa em dry-run, apenas exibindo o conteúdo.
 """
 
+import argparse
 import getpass
-import random
 import sys
 import time
-from datetime import datetime
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 
 from tqdm import tqdm
 
-from .__main__ import _resolve_input, default_registry_path
+from delivery.sender import send_all
+from delivery.smtp import SmtpConfig, enviar_email, montar_mensagem_html
+
+from .cli import resolve_input_path
 from .core import CodeRegistry, NotEnoughCodesError, generate_codes
 from .io import (
     default_output_path,
+    default_registry_path,
     default_report_path,
     read_spreadsheet,
     write_output_csv,
     write_report_csv,
 )
-from .smtp import SmtpConfig, enviar_email, montar_mensagem_html
-
-DELAY_PER_EMAIL_MIN = 7.0
-DELAY_PER_EMAIL_MAX = 10.0
-BATCH_SIZE = 50
-BATCH_PAUSE_MIN = 300.0
-BATCH_PAUSE_MAX = 600.0
-
 
 
 def _confirm(question: str, default_no: bool = True) -> bool:
@@ -48,6 +44,7 @@ def _confirm(question: str, default_no: bool = True) -> bool:
     if default_no:
         return answer in {"s", "sim", "y", "yes"}
     return answer not in {"n", "nao", "não", "no"}
+
 
 def _prompt_credentials(config: SmtpConfig) -> SmtpConfig:
     """Solicita credenciais SMTP via CLI interativo."""
@@ -136,9 +133,7 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
     return rows
 
 
-def _run_envio(
-    rows: list[dict], test_mode: bool, input_path: Path | None = None
-) -> int:
+def _run_envio(rows: list[dict], test_mode: bool, input_path: Path | None = None) -> int:
     """Envia os e-mails conforme o modo (teste / individual / dry-run)."""
     config = SmtpConfig.from_env()
     config = _prompt_credentials(config)
@@ -171,82 +166,50 @@ def _run_envio(
         print("Envio cancelado.")
         return 1
 
-    falhas = 0
-    report_rows = []
-
     print(f"\nIniciando envio de {total} e-mail(s)...")
+
+    def _make_message(row: dict[str, str]) -> MIMEMultipart:
+        return montar_mensagem_html(
+            row["Nome"], config.from_addr, row["E-mail"], numeros=row["Códigos"]
+        )
+
+    def _log_row(index: int, report: dict[str, str]) -> None:
+        if report["Status"] == "Sucesso":
+            tqdm.write(f"  [{index + 1}/{total}] Enviado para {report['E-mail']}")
+        else:
+            tqdm.write(
+                f"  [{index + 1}/{total}] {report['Status']} para "
+                f"{report['E-mail']}: {report['Detalhes']}"
+            )
+
+    def _bump_progress(_current: int, _total: int) -> None:
+        pbar.update(1)
+
     with tqdm(
         total=total,
         desc="Envio dos e-mails",
         unit="email",
         dynamic_ncols=True,
     ) as pbar:
-        for index, row in enumerate(rows, start=1):
-            to_addr = row["E-mail"]
-            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            msg = montar_mensagem_html(
-                row["Nome"], config.from_addr, to_addr, numeros=row["Códigos"]
-            )
-            try:
-                rejeitados = enviar_email(config, msg)
-                if rejeitados:
-                    tqdm.write(f"  [{index}/{total}] Rejeitado para {to_addr}: {rejeitados}")
-                    falhas += 1
-                    report_rows.append({
-                        "Nome": row["Nome"],
-                        "E-mail": to_addr,
-                        "Códigos": row["Códigos"],
-                        "Status": "Rejeitado",
-                        "Data_Hora": now_str,
-                        "Detalhes": f"Rejeitados: {rejeitados}",
-                    })
-                else:
-                    tqdm.write(f"  [{index}/{total}] Enviado para {to_addr}")
-                    report_rows.append({
-                        "Nome": row["Nome"],
-                        "E-mail": to_addr,
-                        "Códigos": row["Códigos"],
-                        "Status": "Sucesso",
-                        "Data_Hora": now_str,
-                        "Detalhes": "Enviado com sucesso",
-                    })
-            except Exception as exc:  # noqa: BLE001 - qualquer falha não interrompe o lote
-                tqdm.write(f"  [{index}/{total}] Falha para {to_addr}: {exc}")
-                falhas += 1
-                report_rows.append({
-                    "Nome": row["Nome"],
-                    "E-mail": to_addr,
-                    "Códigos": row["Códigos"],
-                    "Status": "Falha",
-                    "Data_Hora": now_str,
-                    "Detalhes": str(exc),
-                })
+        result = send_all(
+            config,
+            rows,
+            simulate=False,
+            make_message=_make_message,
+            deliver=enviar_email,
+            sleep_fn=time.sleep,
+            on_row=_log_row,
+            on_progress=_bump_progress,
+            on_message=lambda text: tqdm.write(f"\n  {text}\n"),
+        )
 
-            pbar.update(1)
-
-            if index < total:
-                if index % BATCH_SIZE == 0:
-                    pause_sec = random.uniform(BATCH_PAUSE_MIN, BATCH_PAUSE_MAX)
-                    pause_min = pause_sec / 60.0
-                    tqdm.write(
-                        f"\n  [Pausa de Segurança] {index} e-mails enviados. "
-                        f"Aguardando {pause_min:.1f} minutos ({int(pause_sec)}s) "
-                        f"para prevenir bloqueios SMTP/anti-spam...\n"
-                    )
-                    time.sleep(pause_sec)
-                else:
-                    delay = random.uniform(DELAY_PER_EMAIL_MIN, DELAY_PER_EMAIL_MAX)
-                    time.sleep(delay)
-
-
-
-    if input_path and report_rows:
+    if input_path and result.reports:
         report_path = default_report_path(input_path)
-        write_report_csv(report_path, report_rows)
+        write_report_csv(report_path, result.reports)
         print(f"\nRelatório de envio salvo em: {report_path}")
 
-    if falhas:
-        print(f"\nConcluído com {falhas} falha(s).")
+    if result.failures:
+        print(f"\nConcluído com {result.failures} falha(s).")
         return 1
     print(f"\n{total} e-mail(s) enviados com sucesso.")
     return 0
@@ -254,7 +217,7 @@ def _run_envio(
 
 def run(*, test_mode: bool = False, arquivo: str | None = None) -> int:
     """Executa o fluxo completo de sorteio + envio de forma interativa."""
-    input_path = _resolve_input(arquivo)
+    input_path = resolve_input_path(arquivo)
     if input_path is None:
         print("Nenhum arquivo selecionado. Abortando.")
         return 1
@@ -270,20 +233,22 @@ def run(*, test_mode: bool = False, arquivo: str | None = None) -> int:
     return _run_envio(rows, test_mode=test_mode, input_path=input_path)
 
 
-
 def main(argv: list[str] | None = None) -> int:
     """Ponto de entrada do CLI interativo, aceitando --arquivo e --teste."""
-    arquivo = None
-    test_mode = False
-    for arg in argv or sys.argv[1:]:
-        if arg == "--teste":
-            test_mode = True
-        elif arg.startswith("--arquivo="):
-            arquivo = arg.split("=", 1)[1]
-        elif arg == "--arquivo":
-            print("Uso: --arquivo=<caminho> (use '=' antes do caminho).")
-            return 2
-    return run(test_mode=test_mode, arquivo=arquivo)
+    parser = argparse.ArgumentParser(
+        description="Fluxo interativo de sorteio com envio de e-mails."
+    )
+    parser.add_argument(
+        "--arquivo",
+        help="Caminho da planilha (.xlsx ou .csv). Se omitido, abre o seletor.",
+    )
+    parser.add_argument(
+        "--teste",
+        action="store_true",
+        help="Envia apenas um e-mail de validação para o destinatário configurado.",
+    )
+    args = parser.parse_args(argv)
+    return run(test_mode=args.teste, arquivo=args.arquivo)
 
 
 if __name__ == "__main__":

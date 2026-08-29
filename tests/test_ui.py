@@ -1,5 +1,5 @@
-from code_gen.smtp import SmtpConfig
-from code_gen.ui import EmailWorker, build_custom_message, _status_for_email
+from delivery.smtp import SmtpConfig
+from gui.ui import EmailWorker, _status_for_email, build_custom_message
 
 
 def test_build_custom_message_substitui_placeholders():

@@ -4,6 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .cli import resolve_input_path
 from .core import CodeRegistry, NotEnoughCodesError, generate_codes
 from .io import (
     default_output_path,
@@ -11,39 +12,6 @@ from .io import (
     read_spreadsheet,
     write_output_csv,
 )
-
-
-def _pick_file() -> Path | None:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except ImportError:
-        return None
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    path = filedialog.askopenfilename(
-        title="Selecione a planilha com nomes e e-mails",
-        filetypes=[("Planilhas", "*.xlsx *.csv"), ("Todos os arquivos", "*.*")],
-    )
-    root.destroy()
-    return Path(path) if path else None
-
-
-def _resolve_input(flag: str | None) -> Path | None:
-    if flag:
-        path = Path(flag)
-        if not path.is_file():
-            print(f"Arquivo não encontrado: {path}")
-            return None
-        return path
-    picked = _pick_file()
-    if picked is not None:
-        return picked
-    fallback = input("Caminho da planilha (.xlsx ou .csv): ").strip()
-    if fallback and Path(fallback).is_file():
-        return Path(fallback)
-    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    input_path = _resolve_input(args.arquivo)
+    input_path = resolve_input_path(args.arquivo)
     if input_path is None:
         print("Nenhum arquivo selecionado. Abortando.")
         return 1
