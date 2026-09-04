@@ -62,6 +62,90 @@ Storage nativo: registro do Windows (`HKCU`), config INI no Linux/macOS.
 - **Extrair `_app_settings()` para constante de módulo** para evitar recriar o
   objeto `QSettings` a cada chamada (clareza, ganho marginal).
 
+## Atualizador Automático via Releases do GitHub — proposta
+
+> **Objetivo**: o executável (`DracmaSort.exe`) poder se auto-atualizar baixando a
+> release mais recente publicada no GitHub (o mesmo fluxo manual que fazemos hoje
+> via `gh`/API REST, só que embutido no app).
+
+### Contexto e restrições
+
+- O repositório é **privado**, então a API do GitHub exige **autenticação** —
+  ao contrário de projetos públicos onde apenas `GET /releases/latest` resolve.
+- O app é distribuído como **um único `.exe` (onefile)** em `dist/`, gerado com
+  PyInstaller via `main_exe.py`.
+- As releases já são criadas com asset nomeado `DracmaSort.exe` (v0.2.0, v0.2.1).
+- Dependências atuais (ver `pyproject.toml`): PyQt6, Markdown, openpyxl, tqdm —
+  **sem** biblioteca de HTTP dedicada. Usar `urllib.request` da stdlib evita nova
+  dependência.
+
+### Fluxo proposto
+
+1. **Na inicialização** (ou num botão "Verificar atualizações" na aba de config),
+   o app consulta a versão corrente (`app.__version__`, gerada a partir do
+   `pyproject.toml` ou embutida no build).
+2. **Consulta à última release** — `GET /repos/{owner}/{repo}/releases/latest` com
+   header `Authorization: Bearer <token>` (ver autenticação abaixo). A resposta
+   expõe `tag_name` (ex.: `v0.2.2`) e `assets[].browser_download_url` para o `.exe`.
+3. **Comparação semântica**: se `tag_name` > versão local, oferece atualizar via
+   `QMessageBox` com o changelog do corpo da release.
+4. **Download** do asset em `tempfile.gettempdir()` (ex.: `DracmaSort_v0.2.2.exe`)
+   com barra de progresso (reusar `QProgressDialog`).
+5. **Substituição do executável**: como o `.exe` em execução está bloqueado no
+   Windows, baixar com nome temporário e, ao fechar o app (`closeEvent`), copiar
+   por cima do atual e relançar (ex.: `subprocess.Popen([novo_exe])` + `sys.exit`).
+6. **Rollback**: manter o `.exe` anterior como `DracmaSort.exe.bak` por uma versão.
+
+### Autenticação (ponto crítico no repositório privado)
+
+Opções possíveis, em ordem de complexidade:
+
+| Opção | Como funciona | Prós | Contras |
+|-------|---------------|------|---------|
+| **A. Token armazenado pelo usuário** | Débito configurado na UI (`QSettings`, mesmo padrão de login/from já usado), campo "Token GitHub" | Simples, sem infra | Token com escopo `repo` vaza para `QSettings` (criptografia fraca no Windows); rotação manual |
+| **B. Chave do usuário já presente** | Reusar o `git credential fill` em runtime não é viável (dependente do credential manager instalado) | — | Não reproduzível fora de máquinas com GCM |
+| **C. Token de deploy (recomendado)** | Criar um **PAT apenas-leitura de releases** (escopo `repo:read`/`public_repo`) com permissão mínima, embutido no build via variável de ambiente do PyInstaller | Escopo mínimo, ideal para auto-update | Token pode vazar no `.exe` (extração simples com binwalk); deve ter expiração curta e ser revogável |
+| **D. App público ou release pública** | Tornar só a aba de "Releases" pública, ou o repo inteiro | Elimina autenticação (anônimo) | Muda a política de visibilidade — decisão de negócio |
+
+**Recomendação**: começar pela opção **C** para o *updater* consultar releases
+(leitura), com token lido de variável de ambiente (`GITHUB_TOKEN`) injetada no
+build via `build_main_ui.ps1`, e **fallback para a opção D** se o repo puder ser
+público — aí o updater não precisa de token algum.
+
+### Estrutura de código proposta (novo módulo)
+
+```
+src/updater/
+├── __init__.py          # torna o pacote importável
+├── version.py           # NÚCLEO: versão local (de __version__) + igual/maior/menor semântico
+├── github.py            # NÚCLEO: GET /releases/latest (urllib, header Bearer, timeout)
+├── download.py          # download com progresso (chunks, relatório de bytes)
+└── patch.py             # substituição do .exe + relaunch (Windows)
+```
+
+- **Responsabilidades únicas, testáveis**: `version.py` e `github.py` são
+  testáveis sem GUI (parse de JSON mockado); `download.py` e `patch.py` ficam
+  finos.
+- **Integração com a UI**: botão "Verificar atualizações" + diálogo de progresso
+  numa `QThread` (mesmo padrão do `EmailWorker` existente) para não travar a janela.
+- **Testes** (alinhados às regras do projeto):
+  - comparação semântica (v0.2.1 vs v0.2.2, pré-release, `v` prefixo);
+  - parsing da resposta da API (assets, tag_name);
+  - download para arquivo temporário e fallback de URL.
+
+### Passos de implementação sugeridos (quando aprovado)
+
+1. Criar `src/updater/version.py` com comparação semântica + testes.
+2. Criar `src/updater/github.py` com chamada anônima (opção D) e depois o header
+   Bearer (opção C).
+3. Criar `src/updater/download.py` + `patch.py`.
+4. Adicionar botão/verificação na `MainWindow` e diálogo de progresso.
+5. Injetar `GITHUB_TOKEN`/versão no build via `build_main_ui.ps1` e `main_exe.py`.
+6. Release de teste: publicar `v0.2.2`, verificar o auto-update em máquina limpa.
+
+> **Decisão pendente**: qual opção de autenticação (A/C/D) — decisão de negócio e
+> segurança que cabe ao mantenedor.
+
 ## Status
 
 | # | Item                           | Status                           |
@@ -70,8 +154,11 @@ Storage nativo: registro do Windows (`HKCU`), config INI no Linux/macOS.
 | 2 | Salvar no `closeEvent`          | 🔲 pendente de decisão/implementação |
 | 3 | Testes de persistência          | 🔲 pendente (comportamento já coberto indiretamente) |
 | 4 | Documentar precedência          | 📄 coberto por este doc            |
+| 5 | Atualizador automático (releases GitHub) | 🔲 proposta registrada; decisão de autenticação pendente (A/C/D) |
 
-> **Nota de decisão**: estes itens foram levantados na revisão como melhorias
+> **Nota de decisão**: os itens 1–3 foram levantados na revisão como melhorias
 > opcionais. A release atual (v0.2.1) inclui APENAS a persistência funcional
-> (modelo de e-mail + SMTP via `QSettings`). A implementação dos itens acima
-> ficou registrada aqui para verificação e decisão posteriores.
+> (modelo de e-mail + SMTP via `QSettings`). O item 5 (atualizador automático)
+> está registrado como proposta de arquitetura para avaliação do mantenedor.
+> A implementação dos itens acima ficou registrada aqui para verificação e
+> decisão posteriores.
