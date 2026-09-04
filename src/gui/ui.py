@@ -12,7 +12,7 @@ from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 
 from PyQt6 import uic
-from PyQt6.QtCore import QObject, QThread, QUrl, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import QObject, QSettings, QThread, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -38,10 +38,10 @@ from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdo
 
 from .resources import asset_path, load_qss
 
-DEFAULT_SUBJECT = "Seus números para o sorteio"
+DEFAULT_SUBJECT = "Confira seus números para o sorteio"
 DEFAULT_MESSAGE = """Olá, **{nome}**!
 
-Agradecemos pela realização da matrícula.
+O Colégio Adventista de Blumenau agradece pela realização da rematrícula.
 
 Você recebeu os seguintes números para participar do nosso sorteio:
 
@@ -50,7 +50,7 @@ Você recebeu os seguintes números para participar do nosso sorteio:
 Guarde estes números.
 
 Atenciosamente,
-**Colégio**"""
+**Colégio Adventista de Blumenau**"""
 
 
 def _status_for_email(email: str) -> tuple[str, str]:
@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._load_smtp_config()
+        self._load_message_template()
         self._set_status("Importe uma planilha para começar.")
 
     def _build_ui(self) -> None:
@@ -191,12 +192,38 @@ class MainWindow(QMainWindow):
         self.send_button.clicked.connect(self._send_participants)
         self.cancel_button.clicked.connect(self._request_stop)
         self.reset_button.clicked.connect(self._reset_message_template)
+        self.subject_input.textChanged.connect(self._save_message_template)
+        self.message_input.textChanged.connect(self._save_message_template)
         self.message_input.textChanged.connect(self._update_message_preview)
+        self.host_input.textChanged.connect(self._save_smtp_config)
+        self.port_input.valueChanged.connect(self._save_smtp_config)
+        self.login_input.textChanged.connect(self._save_smtp_config)
+        self.from_input.textChanged.connect(self._save_smtp_config)
 
     def _reset_message_template(self) -> None:
         self.subject_input.setText(DEFAULT_SUBJECT)
         self.message_input.setPlainText(DEFAULT_MESSAGE)
+        self._save_message_template()
         self._set_status("Modelo original da mensagem restaurado.")
+
+    def _app_settings(self) -> QSettings:
+        return QSettings("Colégio Adventista de Blumenau", "Central de Sorteios")
+
+    def _save_message_template(self) -> None:
+        if not hasattr(self, "subject_input") or not hasattr(self, "message_input"):
+            return
+        settings = self._app_settings()
+        settings.setValue("email/subject", self.subject_input.text())
+        settings.setValue("email/body", self.message_input.toPlainText())
+        settings.sync()
+
+    def _load_message_template(self) -> None:
+        settings = self._app_settings()
+        subject = settings.value("email/subject", DEFAULT_SUBJECT)
+        body = settings.value("email/body", DEFAULT_MESSAGE)
+        self.subject_input.setText(str(subject))
+        self.message_input.setPlainText(str(body))
+        self._update_message_preview()
 
     def _update_message_preview(self) -> None:
         if not hasattr(self, "message_preview"):
@@ -223,13 +250,28 @@ class MainWindow(QMainWindow):
         self._apply_style()
         self._update_message_preview()
 
+    def _save_smtp_config(self) -> None:
+        if not hasattr(self, "login_input") or not hasattr(self, "from_input"):
+            return
+        settings = self._app_settings()
+        settings.setValue("smtp/host", self.host_input.text())
+        settings.setValue("smtp/port", self.port_input.value())
+        settings.setValue("smtp/login", self.login_input.text())
+        settings.setValue("smtp/from", self.from_input.text())
+        settings.sync()
+
     def _load_smtp_config(self) -> None:
         config = SmtpConfig.from_env()
-        self.host_input.setText(config.host)
-        self.port_input.setValue(config.port)
-        self.login_input.setText(config.login)
+        settings = self._app_settings()
+        host = settings.value("smtp/host", config.host)
+        port = settings.value("smtp/port", config.port)
+        login = settings.value("smtp/login", config.login)
+        from_addr = settings.value("smtp/from", config.from_addr)
+        self.host_input.setText(str(host))
+        self.port_input.setValue(int(port))
+        self.login_input.setText(str(login))
         self.password_input.setText(config.password)
-        self.from_input.setText(config.from_addr)
+        self.from_input.setText(str(from_addr))
         self.test_to_input.setText(config.to_addr)
 
     def _set_status(self, text: str) -> None:
