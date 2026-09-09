@@ -14,7 +14,7 @@ def _resolve_version() -> str:
     try:
         return version("giveaways-tools")
     except PackageNotFoundError:
-        return "0.2.1"
+        return "0.2.2"
 
 
 __version__: str = _resolve_version()
