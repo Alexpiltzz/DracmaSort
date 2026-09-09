@@ -57,6 +57,35 @@ def _release_token() -> str:
     return ""
 
 
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+
+def _urlopen_follow_redirects(req: urllib.request.Request, timeout: int, *, max_redirects: int = 5):
+    """Abre uma requisição seguindo redirecionamentos 3xx manualmente.
+
+    A API do GitHub pode responder ``307`` apontando para a URL canônica do
+    repositório (``/repositories/{id}/...``) e o ``urllib.request`` não segue
+    redirecionamento de POST de forma confiável. Este helper reenvia a mesma
+    requisição (método, corpo e headers) até resolver a URL.
+    """
+    for _ in range(max_redirects + 1):
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _REDIRECT_CODES:
+                raise
+            location = exc.headers.get("Location")
+            if not location:
+                raise
+            req = urllib.request.Request(
+                location,
+                data=req.data,
+                headers=dict(req.headers),
+                method=req.get_method(),
+            )
+    raise RuntimeError("Redirecionamentos demais ao publicar a release.")
+
+
 def _read_version(repo_root: Path) -> str:
     """Lê a versão do pyproject.toml."""
     pyproject = repo_root / "pyproject.toml"
@@ -126,7 +155,7 @@ def _create_github_release(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with _urlopen_follow_redirects(req, timeout=30) as resp:
             release_data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
@@ -154,7 +183,7 @@ def _create_github_release(
     )
 
     try:
-        with urllib.request.urlopen(upload_req, timeout=300) as resp:
+        with _urlopen_follow_redirects(upload_req, timeout=300) as resp:
             asset_data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         error_body = exc.read().decode("utf-8", errors="replace")
