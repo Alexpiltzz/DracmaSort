@@ -23,18 +23,28 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 
-from code_gen.core import CodeRegistry, NotEnoughCodesError, generate_codes, pool_size
+from code_gen.core import (
+    CodeRegistry,
+    NotEnoughCodesError,
+    StudentRegistry,
+    generate_codes,
+    pool_size,
+)
 from code_gen.io import (
     default_output_path,
     default_registry_path,
     default_report_path,
+    default_student_registry_path,
+    filter_new_students,
     is_valid_email,
+    normalize_name,
     read_spreadsheet,
     write_output_csv,
     write_report_csv,
 )
 from delivery.sender import send_all
 from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdown_to_html
+from updater.updater import UpdateWorker
 
 from .resources import asset_path, load_qss
 
@@ -154,11 +164,16 @@ class MainWindow(QMainWindow):
         self.worker: EmailWorker | None = None
         self.thread: QThread | None = None
         self.dark_mode = False
+        self._pending_update_path: str | None = None
+        self._update_worker: UpdateWorker | None = None
+        self._update_thread: QThread | None = None
+        self._download_thread: QThread | None = None
 
         self._build_ui()
         self._load_smtp_config()
         self._load_message_template()
         self._set_status("Importe uma planilha para começar.")
+        self._start_update_check()
 
     def _build_ui(self) -> None:
         uic.loadUi(asset_path("main_window.ui"), self)
@@ -314,6 +329,15 @@ class MainWindow(QMainWindow):
             self._log(f"Aviso: {warning}")
         if not warnings:
             self._log("Planilha validada sem avisos.")
+        try:
+            tracked = StudentRegistry(default_student_registry_path()).load()
+            _, already_tracked = filter_new_students(records, tracked)
+            if already_tracked:
+                self._log(
+                    f"{len(already_tracked)} aluno(s) já rastreado(s), ignorado(s) na geração."
+                )
+        except (ValueError, OSError) as exc:
+            self._log(f"Não foi possível consultar o registro de alunos: {exc}")
         self.generate_button.setEnabled(bool(records))
         self.export_button.setEnabled(False)
         self.open_folder_button.setEnabled(False)
@@ -331,7 +355,12 @@ class MainWindow(QMainWindow):
     def _populate_input_table(self, records: list[dict[str, str | int]]) -> None:
         self.input_table.setRowCount(len(records))
         for row_index, record in enumerate(records):
-            values = [record["nome"], record["email"], str(record["quantidade"])]
+            values = [
+                str(record.get("aluno", "")),
+                record["nome"],
+                record["email"],
+                str(record["quantidade"]),
+            ]
             for column, value in enumerate(values):
                 self.input_table.setItem(row_index, column, QTableWidgetItem(str(value)))
 
@@ -339,10 +368,28 @@ class MainWindow(QMainWindow):
         if not self.input_path or not self.input_records:
             return
         registry = CodeRegistry(default_registry_path())
+        student_registry = StudentRegistry(default_student_registry_path())
         try:
             used_codes = registry.load()
+            tracked_students = student_registry.load()
+        except (ValueError, OSError) as exc:
+            QMessageBox.critical(self, "Não foi possível carregar os registros", str(exc))
+            return
+
+        fresh_records, skipped = filter_new_students(self.input_records, tracked_students)
+        for aluno in skipped:
+            self._log(f"Aluno '{aluno}' já rastreado, ignorado na geração.")
+        if skipped:
+            self._set_status(f"{len(skipped)} aluno(s) já rastreado(s) ignorado(s).")
+        if not fresh_records:
+            QMessageBox.information(
+                self, "Nenhum aluno novo", "Todos os alunos da planilha já foram rastreados."
+            )
+            return
+
+        try:
             valid_records = [
-                record for record in self.input_records if bool(record.get("email_valido", True))
+                record for record in fresh_records if bool(record.get("email_valido", True))
             ]
             quantities = [int(record["quantidade"]) for record in valid_records]
             batches = generate_codes(quantities, used_codes) if valid_records else []
@@ -352,11 +399,12 @@ class MainWindow(QMainWindow):
 
         batch_iter = iter(batches)
         self.output_rows = []
-        for record in self.input_records:
+        for record in fresh_records:
             email_valid = bool(record.get("email_valido", True))
             codes = ", ".join(next(batch_iter)) if email_valid and batches else ""
             self.output_rows.append(
                 {
+                    "Aluno": str(record.get("aluno", "")),
                     "Nome": str(record["nome"]),
                     "E-mail": str(record["email"]),
                     "Códigos": codes,
@@ -365,8 +413,11 @@ class MainWindow(QMainWindow):
             )
         self.output_path = default_output_path(self.input_path)
         try:
-            write_output_csv(self.output_path, self.output_rows)
-            registry.save(used_codes | {int(code) for batch in batches for code in batch})
+            if self.output_rows:
+                write_output_csv(self.output_path, self.output_rows)
+                registry.save(used_codes | {int(code) for batch in batches for code in batch})
+                new_students = {normalize_name(str(record["aluno"])) for record in fresh_records}
+                student_registry.save(tracked_students | new_students)
         except OSError as exc:
             QMessageBox.critical(self, "Não foi possível salvar a saída", str(exc))
             return
@@ -388,7 +439,14 @@ class MainWindow(QMainWindow):
         self.output_table.setRowCount(len(self.output_rows))
         for row_index, row in enumerate(self.output_rows):
             status, details = _status_for_email(row["E-mail"])
-            values = [row["Nome"], row["E-mail"], row["Códigos"], status, details]
+            values = [
+                row["Aluno"],
+                row["Nome"],
+                row["E-mail"],
+                row["Códigos"],
+                status,
+                details,
+            ]
             for column, value in enumerate(values):
                 self.output_table.setItem(row_index, column, QTableWidgetItem(value))
 
@@ -528,8 +586,8 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(busy)
 
     def _update_sent_row(self, row_index: int, report: dict[str, str]) -> None:
-        self.output_table.setItem(row_index, 3, QTableWidgetItem(report["Status"]))
-        self.output_table.setItem(row_index, 4, QTableWidgetItem(report["Detalhes"]))
+        self.output_table.setItem(row_index, 4, QTableWidgetItem(report["Status"]))
+        self.output_table.setItem(row_index, 5, QTableWidgetItem(report["Detalhes"]))
         self._log(f"{report['Status']}: {report['E-mail']} — {report['Detalhes']}")
 
     def _update_progress(self, current: int, total: int) -> None:
@@ -563,6 +621,99 @@ class MainWindow(QMainWindow):
         dialog.setText(summary)
         dialog.exec()
 
+    def _start_update_check(self) -> None:
+        """Verifica atualizações em background no startup (silencioso)."""
+        self._update_thread = QThread(self)
+        self._update_worker = UpdateWorker()
+        self._update_worker.moveToThread(self._update_thread)
+        self._update_thread.started.connect(self._update_worker.check)
+        self._update_worker.update_available.connect(self._on_update_available)
+        self._update_worker.progress.connect(self._on_update_progress)
+        self._update_worker.download_finished.connect(self._on_update_finished)
+        self._update_worker.error.connect(self._on_update_error)
+        self._update_worker.up_to_date.connect(self._on_update_up_to_date)
+        self._update_worker.error.connect(self._update_thread.quit)
+        self._update_worker.up_to_date.connect(self._update_thread.quit)
+        self._update_worker.download_finished.connect(self._update_thread.quit)
+        self._update_thread.finished.connect(self._update_worker.deleteLater)
+        self._update_thread.finished.connect(self._update_thread.deleteLater)
+        self._update_thread.start()
+
+    def _on_update_available(self, tag: str, body: str, asset_url: str) -> None:
+        """Mostra diálogo perguntando se o usuário quer atualizar."""
+        from code_gen import __version__
+
+        answer = QMessageBox.question(
+            self,
+            "Atualização disponível",
+            f"Uma nova versão ({tag}) está disponível.\n\n"
+            f"Versão atual: v{__version__}\n\n"
+            f"Deseja baixar a atualização agora?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._set_status(f"Baixando atualização {tag}...")
+            self._download_thread = QThread(self)
+            self._update_worker.moveToThread(self._download_thread)
+            self._download_thread.started.connect(self._update_worker.download)
+            self._update_worker.download_finished.connect(self._on_update_downloaded)
+            self._update_worker.progress.connect(self._on_update_progress)
+            self._update_worker.error.connect(self._on_download_error)
+            self._update_worker.download_finished.connect(self._download_thread.quit)
+            self._update_worker.error.connect(self._download_thread.quit)
+            self._download_thread.finished.connect(self._download_thread.deleteLater)
+            self._download_thread.start()
+        else:
+            self._pending_update_path = None
+            self._update_thread.quit()
+
+    def _on_update_downloaded(self, path: str) -> None:
+        """Download concluído — avisa o usuário que o update será aplicado ao fechar."""
+        self._pending_update_path = path
+        self._set_status("Atualização baixada. Será aplicada ao fechar o programa.")
+        QMessageBox.information(
+            self,
+            "Atualização pronta",
+            "A atualização foi baixada com sucesso.\n\n"
+            "Ela será aplicada automaticamente quando você fechar o programa.",
+        )
+
+    def _on_update_downloaded(self, path: str) -> None:
+        """Download concluído — avisa o usuário que o update será aplicado ao fechar."""
+        self._pending_update_path = path
+        self._set_status("Atualização baixada. Será aplicada ao fechar o programa.")
+        QMessageBox.information(
+            self,
+            "Atualização pronta",
+            "A atualização foi baixada com sucesso.\n\n"
+            "Ela será aplicada automaticamente quando você fechar o programa.",
+        )
+
+    def _on_update_progress(self, current: int, total: int) -> None:
+        """Atualiza a barra de progresso durante o download."""
+        if total > 0:
+            mb_done = current / (1024 * 1024)
+            mb_total = total / (1024 * 1024)
+            self._set_status(f"Baixando atualização... {mb_done:.1f}/{mb_total:.1f} MB")
+
+    def _on_update_finished(self, path: str) -> None:
+        """Download concluído (fluxo direto sem confirmação)."""
+        self._pending_update_path = path
+        self._set_status("Atualização baixada. Será aplicada ao fechar o programa.")
+
+    def _on_update_error(self, msg: str) -> None:
+        """Erro na verificação — log silencioso."""
+        self._log(f"[Updater] {msg}")
+
+    def _on_download_error(self, msg: str) -> None:
+        """Erro no download — log silencioso."""
+        self._log(f"[Updater] {msg}")
+
+    def _on_update_up_to_date(self) -> None:
+        """Versão atual já é a mais recente — nada a fazer."""
+        pass
+
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self.thread and self.thread.isRunning():
             answer = QMessageBox.question(
@@ -586,6 +737,8 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         event.accept()
+        if self._pending_update_path and self._update_worker:
+            self._update_worker.apply_update()
 
 
 def main() -> int:

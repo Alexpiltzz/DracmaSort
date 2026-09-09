@@ -7,6 +7,7 @@ from code_gen.core import (
     MIN_CODE,
     CodeRegistry,
     NotEnoughCodesError,
+    StudentRegistry,
     format_code,
     generate_codes,
     pool_size,
@@ -75,3 +76,14 @@ def test_registry_roundtrip(tmp_path):
 
 def test_registry_missing_file_is_empty(tmp_path):
     assert CodeRegistry(tmp_path / "ausente.json").load() == set()
+
+
+def test_student_registry_roundtrip(tmp_path):
+    registry = StudentRegistry(tmp_path / "alunos_rastreados.json")
+    assert registry.load() == set()
+    registry.save({"ana melo", "carlos souza"})
+    assert registry.load() == {"carlos souza", "ana melo"}
+
+
+def test_student_registry_missing_file_is_empty(tmp_path):
+    assert StudentRegistry(tmp_path / "ausente.json").load() == set()

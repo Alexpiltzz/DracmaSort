@@ -31,6 +31,23 @@ class CodeRegistry:
             json.dump(sorted(codes), fh, indent=2)
 
 
+class StudentRegistry:
+    """Registro persistente de alunos já rastreados entre execuções."""
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+
+    def load(self) -> set[str]:
+        if not self.path.exists():
+            return set()
+        with self.path.open("r", encoding="utf-8") as fh:
+            return {str(name) for name in json.load(fh)}
+
+    def save(self, students: set[str]) -> None:
+        with self.path.open("w", encoding="utf-8") as fh:
+            json.dump(sorted(students), fh, indent=2)
+
+
 def format_code(number: int) -> str:
     """Formata um número como código de 4 dígitos, ex.: 1 -> '0001'."""
     return f"{number:04d}"

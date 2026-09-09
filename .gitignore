@@ -19,10 +19,12 @@ assets/icone.ico
 
 # Dados gerados em runtime
 codigos_emitidos.json
+alunos_rastreados.json
 src/cache/
 
 # Configuração local (contém credenciais — não versionar)
 .env
+.env.updater
 
 # IDEs e SO
 .idea/

@@ -62,89 +62,66 @@ Storage nativo: registro do Windows (`HKCU`), config INI no Linux/macOS.
 - **Extrair `_app_settings()` para constante de módulo** para evitar recriar o
   objeto `QSettings` a cada chamada (clareza, ganho marginal).
 
-## Atualizador Automático via Releases do GitHub — proposta
+## Atualizador Automático via Releases do GitHub — implementado
 
-> **Objetivo**: o executável (`DracmaSort.exe`) poder se auto-atualizar baixando a
-> release mais recente publicada no GitHub (o mesmo fluxo manual que fazemos hoje
-> via `gh`/API REST, só que embutido no app).
+> **Objetivo**: o executável (`DracmaSort.exe`) se auto-atualizar baixando a
+> release mais recente publicada no GitHub (o mesmo fluxo manual de antes, agora
+> embutido no app). **Implementado** em conjunto com o fluxo de publicação
+> `python main_exe.py --release`.
 
 ### Contexto e restrições
 
-- O repositório é **privado**, então a API do GitHub exige **autenticação** —
-  ao contrário de projetos públicos onde apenas `GET /releases/latest` resolve.
+- O repositório é **privado**, então a API do GitHub exige **autenticação**.
 - O app é distribuído como **um único `.exe` (onefile)** em `dist/`, gerado com
   PyInstaller via `main_exe.py`.
-- As releases já são criadas com asset nomeado `DracmaSort.exe` (v0.2.0, v0.2.1).
-- Dependências atuais (ver `pyproject.toml`): PyQt6, Markdown, openpyxl, tqdm —
-  **sem** biblioteca de HTTP dedicada. Usar `urllib.request` da stdlib evita nova
-  dependência.
+- Releases com asset nomeado `DracmaSort.exe`.
+- Sem biblioteca de HTTP dedicada — `urllib.request` da stdlib.
 
-### Fluxo proposto
+### Decisões de segurança (definidas na revisão)
 
-1. **Na inicialização** (ou num botão "Verificar atualizações" na aba de config),
-   o app consulta a versão corrente (`app.__version__`, gerada a partir do
-   `pyproject.toml` ou embutida no build).
-2. **Consulta à última release** — `GET /repos/{owner}/{repo}/releases/latest` com
-   header `Authorization: Bearer <token>` (ver autenticação abaixo). A resposta
-   expõe `tag_name` (ex.: `v0.2.2`) e `assets[].browser_download_url` para o `.exe`.
-3. **Comparação semântica**: se `tag_name` > versão local, oferece atualizar via
-   `QMessageBox` com o changelog do corpo da release.
-4. **Download** do asset em `tempfile.gettempdir()` (ex.: `DracmaSort_v0.2.2.exe`)
-   com barra de progresso (reusar `QProgressDialog`).
-5. **Substituição do executável**: como o `.exe` em execução está bloqueado no
-   Windows, baixar com nome temporário e, ao fechar o app (`closeEvent`), copiar
-   por cima do atual e relançar (ex.: `subprocess.Popen([novo_exe])` + `sys.exit`).
-6. **Rollback**: manter o `.exe` anterior como `DracmaSort.exe.bak` por uma versão.
+- **Nenhum token é embutido no executável.** Empacotar o token via build
+  (`_build_config.py`) colocaria a credencial em texto puro no bytecode — descartado.
+- **Token do updater (leitura)**: PAT fine-grained, permissão `Contents: Read-only`
+  só no repo `Alexpiltzz/Giveaways_Tools`, com expiração curta. Distribuído ao lado
+  do `.exe` num arquivo **dedicado** `GITHUB_TOKEN` em `.env.updater` (template:
+  `.env.updater.example`). Nunca no `.env` do SMTP.
+- **Token de publicação (escrita)**: `GITHUB_RELEASE_TOKEN` — variável de ambiente
+  **somente no dev**, usada por `python main_exe.py --release` e `make_release.ps1`.
+  Não chega ao pacote distribuído.
+- **Separação SMTP × updater**: `load_env_file(prefix=_PREFIX)` em `smtp.py` carrega
+  apenas `GIVEAWAY_SMTP_*`, impedindo que credenciais de outras áreas entrem no
+  `os.environ` via import do SMTP. O updater lê o token **somente quando executa**
+  (`check()`/`download()`), de `os.environ["GITHUB_TOKEN"]` ou de `.env.updater`.
 
-### Autenticação (ponto crítico no repositório privado)
-
-Opções possíveis, em ordem de complexidade:
-
-| Opção | Como funciona | Prós | Contras |
-|-------|---------------|------|---------|
-| **A. Token armazenado pelo usuário** | Débito configurado na UI (`QSettings`, mesmo padrão de login/from já usado), campo "Token GitHub" | Simples, sem infra | Token com escopo `repo` vaza para `QSettings` (criptografia fraca no Windows); rotação manual |
-| **B. Chave do usuário já presente** | Reusar o `git credential fill` em runtime não é viável (dependente do credential manager instalado) | — | Não reproduzível fora de máquinas com GCM |
-| **C. Token de deploy (recomendado)** | Criar um **PAT apenas-leitura de releases** (escopo `repo:read`/`public_repo`) com permissão mínima, embutido no build via variável de ambiente do PyInstaller | Escopo mínimo, ideal para auto-update | Token pode vazar no `.exe` (extração simples com binwalk); deve ter expiração curta e ser revogável |
-| **D. App público ou release pública** | Tornar só a aba de "Releases" pública, ou o repo inteiro | Elimina autenticação (anônimo) | Muda a política de visibilidade — decisão de negócio |
-
-**Recomendação**: começar pela opção **C** para o *updater* consultar releases
-(leitura), com token lido de variável de ambiente (`GITHUB_TOKEN`) injetada no
-build via `build_main_ui.ps1`, e **fallback para a opção D** se o repo puder ser
-público — aí o updater não precisa de token algum.
-
-### Estrutura de código proposta (novo módulo)
+### Arquitetura final
 
 ```
 src/updater/
-├── __init__.py          # torna o pacote importável
-├── version.py           # NÚCLEO: versão local (de __version__) + igual/maior/menor semântico
-├── github.py            # NÚCLEO: GET /releases/latest (urllib, header Bearer, timeout)
-├── download.py          # download com progresso (chunks, relatório de bytes)
-└── patch.py             # substituição do .exe + relaunch (Windows)
+├── __init__.py          # pacote importável
+├── version.py           # versão local + comparação semântica (is_newer)
+├── github.py            # GET /releases/latest (urllib, Bearer opcional, timeout)
+├── download.py          # download com progresso + auth header para repo privado
+├── updater.py           # UpdateWorker (QThread): check → download → apply_update
+└── _build_config.py     # config estática SEM credenciais (repo + nome do asset)
 ```
 
-- **Responsabilidades únicas, testáveis**: `version.py` e `github.py` são
-  testáveis sem GUI (parse de JSON mockado); `download.py` e `patch.py` ficam
-  finos.
-- **Integração com a UI**: botão "Verificar atualizações" + diálogo de progresso
-  numa `QThread` (mesmo padrão do `EmailWorker` existente) para não travar a janela.
-- **Testes** (alinhados às regras do projeto):
-  - comparação semântica (v0.2.1 vs v0.2.2, pré-release, `v` prefixo);
-  - parsing da resposta da API (assets, tag_name);
-  - download para arquivo temporário e fallback de URL.
+- **Integração com a UI** (`src/gui/ui.py`): verificação automática no startup em
+  background (`QThread`), diálogo de confirmação, barra de progresso no download e
+  `apply_update()` no `closeEvent` (substitui o `.exe` e relança, com `.bak` de rollback).
+- **Publicação**: `main_exe.py --release` cria a release + upload do asset; o mesmo
+  fluxo existe em `make_release.ps1`.
+- **Testes**: `tests/test_updater.py` (12 testes) — parsing de release, comparação
+  semântica, caminho de download, 404, sem asset. Usam mock de `urlopen` (sem rede).
 
-### Passos de implementação sugeridos (quando aprovado)
+### Opções de autenticação — decisão registrada
 
-1. Criar `src/updater/version.py` com comparação semântica + testes.
-2. Criar `src/updater/github.py` com chamada anônima (opção D) e depois o header
-   Bearer (opção C).
-3. Criar `src/updater/download.py` + `patch.py`.
-4. Adicionar botão/verificação na `MainWindow` e diálogo de progresso.
-5. Injetar `GITHUB_TOKEN`/versão no build via `build_main_ui.ps1` e `main_exe.py`.
-6. Release de teste: publicar `v0.2.2`, verificar o auto-update em máquina limpa.
-
-> **Decisão pendente**: qual opção de autenticação (A/C/D) — decisão de negócio e
-> segurança que cabe ao mantenedor.
+| Opção | Situação |
+|-------|----------|
+| A. Token armazenado pelo usuário (QSettings) | ❌ descartado — criptografia fraca no Windows |
+| B. Reusar `git credential fill` | ❌ descartado — dependente do credential manager |
+| C. PAT read-only distribuído | ✅ adotado (refinado): PAT `Contents: Read-only` em `.env.updater` ao lado do `.exe`, sem SMTP junto, não embutido no build |
+| D. Repo/release público | 🔲 não adotado — decisão de visibilidade |
+| Servidor intermediário / GitHub App | 🔲 fora do escopo atual; recomendado caso haja distribuição pública futura |
 
 ## Status
 
@@ -154,11 +131,13 @@ src/updater/
 | 2 | Salvar no `closeEvent`          | 🔲 pendente de decisão/implementação |
 | 3 | Testes de persistência          | 🔲 pendente (comportamento já coberto indiretamente) |
 | 4 | Documentar precedência          | 📄 coberto por este doc            |
-| 5 | Atualizador automático (releases GitHub) | 🔲 proposta registrada; decisão de autenticação pendente (A/C/D) |
+| 5 | Atualizador automático (releases GitHub) | ✅ implementado com segurança revisada |
+| 6 | `python main_exe.py --release`  | ✅ implementado (publica release + asset) |
+| 7 | Separação de credenciais (`.env` SMTP / `.env.updater` / publish env) | ✅ implementado |
 
-> **Nota de decisão**: os itens 1–3 foram levantados na revisão como melhorias
-> opcionais. A release atual (v0.2.1) inclui APENAS a persistência funcional
-> (modelo de e-mail + SMTP via `QSettings`). O item 5 (atualizador automático)
-> está registrado como proposta de arquitetura para avaliação do mantenedor.
-> A implementação dos itens acima ficou registrada aqui para verificação e
-> decisão posteriores.
+> **Nota de decisão**: os itens 1–3 seguem pendentes (melhorias opcionais da
+> revisão). O item 5 (atualizador automático) foi **implementado** — ver seção
+> acima — e as decisões de segurança/autenticação estão registradas na tabela
+> "Opções de autenticação". Em caso de distribuição pública futura, revisitar a
+> opção de servidor intermediário/GitHub App para remover o PAT do ambiente do
+> usuário.

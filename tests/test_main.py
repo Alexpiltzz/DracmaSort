@@ -6,22 +6,49 @@ from code_gen.core import NotEnoughCodesError
 
 def test_run_processamento_gera_rows(tmp_path, monkeypatch):
     src = tmp_path / "entrada.csv"
-    src.write_text("Nome;E-mail;Quantidade\nMaria;maria@ex.com;2\n", encoding="utf-8-sig")
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nMaria Silva;Maria;maria@ex.com;2\n",
+        encoding="utf-8-sig",
+    )
 
     monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
+    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
     monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
 
     rows = main._run_processamento(src)
     assert rows is not None
     assert len(rows) == 1
+    assert rows[0]["Aluno"] == "Maria Silva"
     assert rows[0]["Nome"] == "Maria"
     assert rows[0]["E-mail"] == "maria@ex.com"
     assert len(rows[0]["Códigos"].replace(" ", "").split(",")) == 2
 
 
+def test_run_processamento_filtra_alunos_ja_rastreados(tmp_path, monkeypatch):
+    src = tmp_path / "entrada.csv"
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nAna Melo;Ana;ana@ex.com;1\nBia Reis;Bia;bia@ex.com;1\n",
+        encoding="utf-8-sig",
+    )
+
+    monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
+    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
+    monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
+
+    alunos_path = tmp_path / "alunos.json"
+    alunos_path.write_text('["ana melo"]', encoding="utf-8")
+
+    rows = main._run_processamento(src)
+    assert rows is not None
+    assert len(rows) == 1
+    assert rows[0]["Aluno"] == "Bia Reis"
+    assert "ana melo" in alunos_path.read_text(encoding="utf-8")
+    assert "bia reis" in alunos_path.read_text(encoding="utf-8")
+
+
 def test_run_processamento_planilha_vazia(tmp_path, monkeypatch):
     src = tmp_path / "vazia.csv"
-    src.write_text("Nome;E-mail;Quantidade\n", encoding="utf-8-sig")
+    src.write_text("Aluno;Nome;E-mail;Quantidade\n", encoding="utf-8-sig")
     monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
     assert main._run_processamento(src) is None
 
@@ -34,8 +61,12 @@ def test_run_processamento_erro_leitura(tmp_path):
 
 def test_run_processamento_sem_codigos(tmp_path, monkeypatch):
     src = tmp_path / "entrada.csv"
-    src.write_text("Nome;E-mail;Quantidade\nMaria;maria@ex.com;1\n", encoding="utf-8-sig")
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nMaria Silva;Maria;maria@ex.com;1\n",
+        encoding="utf-8-sig",
+    )
     monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
+    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
 
     class Boom(NotEnoughCodesError):
         pass
@@ -150,7 +181,6 @@ def test_run_envio_individual_com_relatorio(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(builtins, "input", lambda _="": "s")
     monkeypatch.setattr(main.time, "sleep", lambda _sec: None)
 
-
     input_file = tmp_path / "participantes.csv"
     assert main._run_envio(rows, test_mode=False, input_path=input_file) == 0
     assert len(chamadas) == 2
@@ -189,5 +219,3 @@ def test_run_envio_pausa_lote(tmp_path, monkeypatch):
     assert len(sleeps) == 50
     # O 50º sleep deve corresponder à pausa de lote (>= 300s)
     assert sleeps[49] >= 300.0
-
-

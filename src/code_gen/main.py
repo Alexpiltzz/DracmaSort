@@ -26,11 +26,14 @@ from delivery.sender import send_all
 from delivery.smtp import SmtpConfig, enviar_email, montar_mensagem_html
 
 from .cli import resolve_input_path
-from .core import CodeRegistry, NotEnoughCodesError, generate_codes
+from .core import CodeRegistry, NotEnoughCodesError, StudentRegistry, generate_codes
 from .io import (
     default_output_path,
     default_registry_path,
     default_report_path,
+    default_student_registry_path,
+    filter_new_students,
+    normalize_name,
     read_spreadsheet,
     write_output_csv,
     write_report_csv,
@@ -99,13 +102,23 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
         print("Nenhuma linha válida encontrada para processamento.")
         return None
 
+    registry = CodeRegistry(default_registry_path())
+    student_registry = StudentRegistry(default_student_registry_path())
+    used_codes = registry.load()
+    tracked_students = student_registry.load()
+
+    records, skipped = filter_new_students(records, tracked_students)
+    for aluno in skipped:
+        print(f"Aviso: aluno '{aluno}' já rastreado, ignorado.")
+    if not records:
+        print("Todos os alunos da planilha já foram rastreados.")
+        return None
+
     valid_records = [record for record in records if bool(record.get("email_valido", True))]
     if not valid_records:
         print("Nenhum e-mail válido encontrado para gerar códigos.")
         return None
 
-    registry = CodeRegistry(default_registry_path())
-    used_codes = registry.load()
     quantities = [record["quantidade"] for record in valid_records]
 
     try:
@@ -115,7 +128,12 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
         return None
 
     rows = [
-        {"Nome": record["nome"], "E-mail": record["email"], "Códigos": ", ".join(codes)}
+        {
+            "Aluno": record["aluno"],
+            "Nome": record["nome"],
+            "E-mail": record["email"],
+            "Códigos": ", ".join(codes),
+        }
         for record, codes in zip(valid_records, batches, strict=True)
     ]
     output_path = default_output_path(input_path)
@@ -123,10 +141,13 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
 
     newly_used = {int(code) for codes in batches for code in codes}
     registry.save(used_codes | newly_used)
+    new_students = {normalize_name(str(record["aluno"])) for record in valid_records}
+    student_registry.save(tracked_students | new_students)
 
     print(f"\n{len(valid_records)} pessoas atendidas, {sum(quantities)} códigos gerados.")
     print(f"Saída: {output_path}")
-    print(f"Registro atualizado: {registry.path}\n")
+    print(f"Registro atualizado: {registry.path}")
+    print(f"Registro de alunos atualizado: {student_registry.path}\n")
     print("Linhas geradas:")
     _print_rows(rows)
     print()

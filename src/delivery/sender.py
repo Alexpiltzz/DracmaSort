@@ -107,6 +107,7 @@ def send_all(
                 details = str(exc)
 
         report = {
+            "Aluno": row.get("Aluno", ""),
             "Nome": row["Nome"],
             "E-mail": row["E-mail"],
             "Códigos": row["Códigos"],

@@ -87,6 +87,7 @@ contraste entre os painéis, sem alterar a lógica do aplicativo.
 
 A primeira linha deve conter os cabeçalhos. Os nomes das colunas são flexíveis (sem diferenciar maiúsculas ou acentos):
 
+- **Aluno** — também aceita `aluno_nome`, `student`
 - **Nome** — também aceita `name`, `participante`
 - **E-mail** — também aceita `email`, `correio`
 - **Quantidade** — também aceita `qtd`, `qty`, `numero`, `n`
@@ -94,33 +95,37 @@ A primeira linha deve conter os cabeçalhos. Os nomes das colunas são flexívei
 Exemplo (`participantes.csv`):
 
 ```csv
-Nome;E-mail;Quantidade
-Ana Souza;ana@example.com;3
-João Pereira;joao@example.com;2
+Aluno;Nome;E-mail;Quantidade
+Ana Souza;Ana;ana@example.com;3
+João Pereira;João;joao@example.com;2
 ```
 
-Linhas inválidas (nome vazio, e-mail sem formato válido ou quantidade menor que 1) são ignoradas com avisos no terminal.
+> **Filtro de alunos repetidos:** a coluna **Aluno** identifica quem já participou.
+> Ao gerar os códigos, alunos que constam no registro `alunos_rastreados.json`
+> são ignorados (não recebem números novamente). As demais colunas (Nome,
+> E-mail, Quantidade) são apenas dados de envio e não geram filtro algum.
+
+Linhas inválidas (aluno vazio, nome vazio, e-mail sem formato válido ou quantidade menor que 1) são ignoradas com avisos no terminal.
 
 ---
 
 ## Formato das Saídas
 
 Ao final da execução, são gerados no mesmo diretório da planilha de entrada:
-
 ### 1. CSV dos Códigos Sorteados (`codigos_sorteados_<data>_<hora>.csv`)
 
 ```csv
-Nome;E-mail;Códigos
-Ana Souza;ana@example.com;4631, 3087, 1050
-João Pereira;joao@example.com;5793, 0704
+Aluno;Nome;E-mail;Códigos
+Ana Souza;Ana;ana@example.com;4631, 3087, 1050
+João Pereira;João;joao@example.com;5793, 0704
 ```
 
 ### 2. CSV do Relatório de Envio (`relatorio_envio_<data>_<hora>.csv`)
 
 ```csv
-Nome;E-mail;Códigos;Status;Data_Hora;Detalhes
-Ana Souza;ana@example.com;4631, 3087, 1050;Sucesso;2026-08-28 10:15:20;Enviado com sucesso
-João Pereira;joao@example.com;5793, 0704;Sucesso;2026-08-28 10:15:30;Enviado com sucesso
+Aluno;Nome;E-mail;Códigos;Status;Data_Hora;Detalhes
+Ana Souza;Ana;ana@example.com;4631, 3087, 1050;Sucesso;2026-08-28 10:15:20;Enviado com sucesso
+João Pereira;João;joao@example.com;5793, 0704;Sucesso;2026-08-28 10:15:30;Enviado com sucesso
 ```
 
 ---
@@ -162,9 +167,40 @@ GIVEAWAY_SMTP_TO=seu.email@dominio.com
 
 ---
 
+## Atualização Automática do Executável
+
+O executável verifica ao iniciar se há uma release mais recente publicada no
+GitHub e, com confirmação do usuário, baixa e aplica a atualização (o `.exe`
+atual é substituído ao fechar o programa, com rollback via `DracmaSort.exe.bak`).
+
+### Configuração do updater (`.env.updater`)
+
+Para repositórios **privados**, o updater precisa de um token **somente de
+leitura**. Crie um PAT fine-grained com permissão `Contents: Read-only` apenas
+no repositório `Alexpiltzz/Giveaways_Tools` (com expiração curta) e coloque-o
+no arquivo `.env.updater`, **ao lado do executável** — o token nunca é embutido
+no binário:
+
+```dotenv
+GITHUB_TOKEN=seu_token_aqui
+```
+
+Template pronto para copiar: `.env.updater.example`.
+
+- O `.env.updater` é **separado** do `.env`: o `load_env_file` do SMTP carrega
+  apenas as variáveis `GIVEAWAY_SMTP_*`, e o updater lê o `GITHUB_TOKEN` somente
+  quando executa (`check`/`download`) — importar o SMTP não carrega o token.
+- O token de **publicação** (`GITHUB_RELEASE_TOKEN`) é usado apenas no ambiente
+  de desenvolvimento, via `python main_exe.py --release` ou `make_release.ps1`,
+  e nunca vai para o pacote distribuído ao usuário.
+
+---
+
 ## Sobre a Não-Repetição
 
 O arquivo `codigos_emitidos.json`, na raiz do projeto, guarda todos os números já sorteados (`0001` a `9999`). **Preserve este arquivo** para que os códigos nunca se repitam entre execuções futuras.
+
+O arquivo `alunos_rastreados.json`, também na raiz do projeto, guarda os nomes dos alunos que já passaram pelo sistema. **Preserve este arquivo** para que um mesmo aluno não receba números de sorteio novamente em execuções futuras.
 
 ---
 
@@ -202,10 +238,14 @@ uv run --with pyqt6-tools pyqt6-tools designer
 Giveaways_Tools/
 ├── main.py              # Ponto de entrada raiz do script
 ├── main_ui.py           # Ponto de entrada da interface gráfica PyQt
-├── main_exe.py          # Gera o executável Windows (PyInstaller)
+├── main_exe.py          # Gera o executável Windows (PyInstaller) + --release
+├── make_release.ps1     # Publica release + asset no GitHub (alternativa ao --release)
 ├── build_main_ui.ps1    # Script alternativo de build do executável
 ├── codigos_emitidos.json# Registro persistente de códigos sorteados
+├── alunos_rastreados.json# Registro persistente de alunos já rastreados
 ├── pyproject.toml       # Dependências e configurações do projeto
+├── .env.example         # Template das variáveis SMTP (carrega só GIVEAWAY_SMTP_*)
+├── .env.updater.example # Template da credencial de leitura do updater
 ├── README.md            # Documentação completa
 ├── assets/              # Recursos de interface
 │   ├── main_window.ui   # Layout da janela (Qt Designer)
@@ -225,9 +265,16 @@ Giveaways_Tools/
 │   │   ├── __init__.py
 │   │   ├── sender.py     # Loop de envio em lote compartilhado (TUI/UI)
 │   │   └── smtp.py       # Envio de e-mails HTML via SMTP
-│   └── gui/              # Interface gráfica PyQt
+│   ├── gui/              # Interface gráfica PyQt
+│   │   ├── __init__.py
+│   │   ├── ui.py         # Importação, revisão e envio + verificação de update
+│   │   └── resources.py  # Resolução de assets (.ui/.qss)
+│   └── updater/          # Atualizador automático via releases do GitHub
 │       ├── __init__.py
-│       ├── ui.py         # Importação, revisão e envio
-│       └── resources.py  # Resolução de assets (.ui/.qss)
+│       ├── version.py    # Comparação semântica de versões
+│       ├── github.py     # Consulta à última release
+│       ├── download.py   # Download do asset com progresso
+│       ├── updater.py    # Worker QThread: check → download → apply_update
+│       └── _build_config.py # Config estática do updater (sem credenciais)
 └── tests/               # Testes unitários com pytest
 ```

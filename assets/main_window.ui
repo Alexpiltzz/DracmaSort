@@ -326,6 +326,11 @@
               </attribute>
               <column>
                <property name="text">
+                <string>Aluno</string>
+               </property>
+              </column>
+              <column>
+               <property name="text">
                 <string>Nome</string>
                </property>
               </column>
@@ -368,32 +373,37 @@
               <attribute name="verticalHeaderVisible">
                <bool>false</bool>
               </attribute>
-              <column>
-               <property name="text">
-                <string>Nome</string>
-               </property>
-              </column>
-              <column>
-               <property name="text">
-                <string>E-mail</string>
-               </property>
-              </column>
-              <column>
-               <property name="text">
-                <string>Códigos</string>
-               </property>
-              </column>
-              <column>
-               <property name="text">
-                <string>Status</string>
-               </property>
-              </column>
-              <column>
-               <property name="text">
-                <string>Detalhes</string>
-               </property>
-              </column>
-             </widget>
+<column>
+                <property name="text">
+                 <string>Aluno</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>Nome</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>E-mail</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>Códigos</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>Status</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>Detalhes</string>
+                </property>
+               </column>
+              </widget>
             </item>
            </layout>
           </widget>

@@ -9,8 +9,8 @@ from openpyxl import load_workbook
 
 from .runtime import app_root
 
-OUTPUT_FIELDS = ["Nome", "E-mail", "Códigos"]
-REPORT_FIELDS = ["Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
+OUTPUT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos"]
+REPORT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
 
 
 def _normalize(value: str) -> str:
@@ -18,11 +18,23 @@ def _normalize(value: str) -> str:
     return "".join(char for char in text if unicodedata.category(char) != "Mn")
 
 
+def normalize_name(value: str) -> str:
+    """Normaliza um nome para comparação resiliente entre execuções."""
+    return _normalize(value)
+
+
 def _map_columns(headers: list) -> dict[str, int | None]:
-    columns: dict[str, int | None] = {"nome": None, "email": None, "quantidade": None}
+    columns: dict[str, int | None] = {
+        "aluno": None,
+        "nome": None,
+        "email": None,
+        "quantidade": None,
+    }
     for index, header in enumerate(headers):
         key = _normalize(header)
-        if key in {"nome", "name", "participante"}:
+        if key in {"aluno", "aluno_nome", "student"}:
+            columns["aluno"] = index
+        elif key in {"nome", "name", "participante"}:
             columns["nome"] = index
         elif key in {"email", "e-mail", "correio"}:
             columns["email"] = index
@@ -103,10 +115,14 @@ def read_spreadsheet(path: Path) -> tuple[list[dict], list[str]]:
     for line_no, row in enumerate(rows[1:], start=2):
         if not any(str(cell).strip() for cell in row):
             continue
+        aluno = str(row[columns["aluno"]]).strip()
         name = str(row[columns["nome"]]).strip()
         email = str(row[columns["email"]]).strip()
         quantity_text = row[columns["quantidade"]]
         quantity = _parse_quantity(quantity_text)
+        if not aluno:
+            warnings.append(f"Linha {line_no}: aluno vazio, ignorada.")
+            continue
         if not name:
             warnings.append(f"Linha {line_no}: nome vazio, ignorada.")
             continue
@@ -120,6 +136,7 @@ def read_spreadsheet(path: Path) -> tuple[list[dict], list[str]]:
             )
         records.append(
             {
+                "aluno": aluno,
                 "nome": name,
                 "email": email,
                 "quantidade": quantity,
@@ -127,6 +144,21 @@ def read_spreadsheet(path: Path) -> tuple[list[dict], list[str]]:
             }
         )
     return records, warnings
+
+
+def filter_new_students(
+    records: list[dict], tracked_students: set[str]
+) -> tuple[list[dict], list[str]]:
+    """Devolve os registros cujos alunos ainda não foram rastreados e os ignorados."""
+    fresh = []
+    skipped = []
+    for record in records:
+        key = _normalize(str(record.get("aluno", "")))
+        if key and key in tracked_students:
+            skipped.append(record.get("aluno", ""))
+        else:
+            fresh.append(record)
+    return fresh, skipped
 
 
 def write_output_csv(path: Path, rows: list[dict]) -> None:
@@ -158,3 +190,7 @@ def default_report_path(input_path: Path) -> Path:
 
 def default_registry_path() -> Path:
     return app_root() / "codigos_emitidos.json"
+
+
+def default_student_registry_path() -> Path:
+    return app_root() / "alunos_rastreados.json"

@@ -5,10 +5,13 @@ import sys
 from pathlib import Path
 
 from .cli import resolve_input_path
-from .core import CodeRegistry, NotEnoughCodesError, generate_codes
+from .core import CodeRegistry, NotEnoughCodesError, StudentRegistry, generate_codes
 from .io import (
     default_output_path,
     default_registry_path,
+    default_student_registry_path,
+    filter_new_students,
+    normalize_name,
     read_spreadsheet,
     write_output_csv,
 )
@@ -36,6 +39,13 @@ def main(argv: list[str] | None = None) -> int:
             "na raiz do projeto."
         ),
     )
+    parser.add_argument(
+        "--registro-alunos",
+        help=(
+            "Caminho do registro de alunos rastreados. Padrão: alunos_rastreados.json "
+            "na raiz do projeto."
+        ),
+    )
     args = parser.parse_args(argv)
 
     input_path = resolve_input_path(args.arquivo)
@@ -44,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     registry_path = Path(args.registro) if args.registro else default_registry_path()
+    student_registry_path = (
+        Path(args.registro_alunos) if args.registro_alunos else default_student_registry_path()
+    )
 
     try:
         records, warnings = read_spreadsheet(input_path)
@@ -59,7 +72,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     registry = CodeRegistry(registry_path)
+    student_registry = StudentRegistry(student_registry_path)
     used_codes = registry.load()
+    tracked_students = student_registry.load()
+
+    records, skipped = filter_new_students(records, tracked_students)
+    for aluno in skipped:
+        print(f"Aviso: aluno '{aluno}' já rastreado, ignorado.")
+    if not records:
+        print("Todos os alunos da planilha já foram rastreados.")
+        return 1
+
     quantities = [record["quantidade"] for record in records]
 
     try:
@@ -69,7 +92,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     rows = [
-        {"Nome": record["nome"], "E-mail": record["email"], "Códigos": ", ".join(codes)}
+        {
+            "Aluno": record["aluno"],
+            "Nome": record["nome"],
+            "E-mail": record["email"],
+            "Códigos": ", ".join(codes),
+        }
         for record, codes in zip(records, batches, strict=True)
     ]
     output_path = Path(args.saida) if args.saida else default_output_path(input_path)
@@ -77,10 +105,13 @@ def main(argv: list[str] | None = None) -> int:
 
     newly_used = {int(code) for codes in batches for code in codes}
     registry.save(used_codes | newly_used)
+    new_students = {normalize_name(str(record["aluno"])) for record in records}
+    student_registry.save(tracked_students | new_students)
 
     print(f"{len(records)} pessoas atendidas, {sum(quantities)} códigos gerados.")
     print(f"Saída: {output_path}")
     print(f"Registro atualizado: {registry_path}")
+    print(f"Registro de alunos atualizado: {student_registry_path}")
     return 0
 
 

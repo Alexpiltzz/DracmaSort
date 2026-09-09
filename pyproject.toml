@@ -27,7 +27,7 @@ gerador-interativo = "code_gen.main:main"
 gerador-grafico = "gui.ui:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/code_gen", "src/delivery", "src/gui"]
+packages = ["src/code_gen", "src/delivery", "src/gui", "src/updater"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

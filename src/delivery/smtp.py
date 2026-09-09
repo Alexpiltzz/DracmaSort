@@ -33,11 +33,15 @@ def project_root() -> Path:
     return app_root()
 
 
-def load_env_file(path: Path | None = None) -> None:
+def load_env_file(path: Path | None = None, *, prefix: str = "") -> None:
     """Carrega variáveis de um arquivo ``.env`` para o ambiente.
 
     Valores já presentes no ambiente têm precedência (não são sobrescritos), o
     que permite fornecer a senha por ambiente sem depender do arquivo.
+
+    Quando ``prefix`` é informado, apenas as variáveis cujo nome começa com o
+    prefixo são carregadas — usado para impedir que credenciais de outros
+    subsistemas (ex.: ``GITHUB_TOKEN``) entrem no ambiente via SMTP.
     """
     env_path = path or project_root() / ".env"
     if not env_path.is_file():
@@ -47,7 +51,10 @@ def load_env_file(path: Path | None = None) -> None:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        key = key.strip()
+        if prefix and not key.startswith(prefix):
+            continue
+        os.environ.setdefault(key, value.strip())
 
 
 @dataclass(frozen=True)
@@ -222,4 +229,4 @@ def enviar_email(config: SmtpConfig, msg: MIMEMultipart) -> dict:
         servidor.quit()
 
 
-load_env_file()
+load_env_file(prefix=_PREFIX)
