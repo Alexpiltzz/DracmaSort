@@ -161,16 +161,16 @@ def _create_github_release(
         error_body = exc.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"Erro ao criar release: HTTP {exc.code}\n{error_body}") from exc
 
-    release_id = release_data["id"]
     release_url = release_data["html_url"]
 
     size_mb = exe_path.stat().st_size / (1024 * 1024)
     print(f"  Uploadando {GITHUB_ASSET_NAME} ({size_mb:.1f} MB)...")
 
-    upload_url = (
-        f"https://uploads.github.com/repos/{GITHUB_REPO}"
-        f"/releases/{release_id}/assets?name={GITHUB_ASSET_NAME}"
-    )
+    # A resposta da criação fornece o upload_url canônico
+    # (https://uploads.github.com/repositories/{id}/releases/...), evitando
+    # o redirect 307 de `uploads.github.com/repos/{slug}/...`.
+    upload_url_template = release_data["upload_url"]
+    upload_url = upload_url_template.split("{", 1)[0] + f"?name={GITHUB_ASSET_NAME}"
     upload_req = urllib.request.Request(
         upload_url,
         data=exe_path.read_bytes(),
