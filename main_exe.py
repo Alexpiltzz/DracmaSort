@@ -30,14 +30,31 @@ GITHUB_ASSET_NAME = "DracmaSort.exe"
 
 
 def _release_token() -> str:
-    """Resolve o token de publicação do ambiente de desenvolvimento.
+    """Resolve o token de publicação apenas no ambiente de desenvolvimento.
 
-    O token de release tem permissão de escrita (Contents: Read+Write) para
-    publicar Releases, NUNCA é embutido no executável e é definido apenas no
-    shell do desenvolvedor:
-        $env:GITHUB_RELEASE_TOKEN = "..."
+    Precedência:
+        1. variável de ambiente ``GITHUB_RELEASE_TOKEN`` (shell do dev);
+        2. chave ``GITHUB_RELEASE_TOKEN`` em ``.env`` local (gitignored).
+
+    ``main_exe.py`` é ferramenta de dev/build — nunca é empacotada no
+    executável. O token tem permissão de escrita (Contents: Read+Write)
+    para publicar Releases e não faz parte do pacote distribuído.
     """
-    return os.environ.get("GITHUB_RELEASE_TOKEN", "")
+    token = os.environ.get("GITHUB_RELEASE_TOKEN", "")
+    if token:
+        return token
+
+    env_file = Path(__file__).resolve().parent / ".env"
+    if not env_file.is_file():
+        return ""
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if key.strip() == "GITHUB_RELEASE_TOKEN":
+            return value.strip()
+    return ""
 
 
 def _read_version(repo_root: Path) -> str:
@@ -211,10 +228,11 @@ def release(name: str, *, keep_artifacts: bool = False) -> int:
     repo_root = Path(__file__).resolve().parent
     token = _release_token()
     if not token:
-        print("ERRO: variável de ambiente GITHUB_RELEASE_TOKEN não definida.")
+        print("ERRO: GITHUB_RELEASE_TOKEN não definido.")
         print(
-            "Defina com: $env:GITHUB_RELEASE_TOKEN = 'ghp_...' "
-            "(token com permissão de escrita no repositório)."
+            "Defina a variável de ambiente GITHUB_RELEASE_TOKEN no shell "
+            "ou a chave GITHUB_RELEASE_TOKEN no arquivo .env local "
+            "(ambos apenas no ambiente de desenvolvimento)."
         )
         return 1
 

@@ -183,10 +183,14 @@ atualizações.
 ### Publicação de releases (ambiente de desenvolvimento)
 
 Publicar uma nova versão continua exigindo o token de **escrita**
-(`GITHUB_RELEASE_TOKEN`), definido **somente** no shell do desenvolvedor:
+(`GITHUB_RELEASE_TOKEN`), presente **somente no ambiente de desenvolvimento**:
 
 ```powershell
+# Opção 1 — variável de ambiente do shell
 $env:GITHUB_RELEASE_TOKEN = "seu_token_com_permissao_de_escrita"
+uv run python main_exe.py --release
+
+# Opção 2 — chave GITHUB_RELEASE_TOKEN no .env local (gitignored, não distribuído)
 uv run python main_exe.py --release
 ```
 
