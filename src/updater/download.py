@@ -16,7 +16,6 @@ def download_asset(
     on_progress: Callable[[int, int], None] | None = None,
     timeout: int = 30,
     chunk_size: int = 65536,
-    token: str = "",
 ) -> Path:
     """Baixa um asset de release para um arquivo local.
 
@@ -27,7 +26,6 @@ def download_asset(
             ``total_bytes`` pode ser 0 se o servidor não informar Content-Length.
         timeout: Timeout da requisição em segundos.
         chunk_size: Tamanho do chunk de leitura.
-        token: Token GitHub opcional (necessário para repos privados).
 
     Returns:
         O caminho do arquivo baixado (mesmo que ``dest``).
@@ -36,8 +34,6 @@ def download_asset(
         ConnectionError: Se a requisição falhar.
     """
     headers = {"Accept": "application/octet-stream"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
 
     try:

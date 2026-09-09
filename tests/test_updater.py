@@ -3,7 +3,7 @@ import urllib.error
 from email.message import Message
 from unittest.mock import MagicMock, patch
 
-from updater.download import temp_download_path
+from updater.download import download_asset, temp_download_path
 from updater.github import check_latest_release
 from updater.version import is_newer, parse_version
 
@@ -36,17 +36,47 @@ def test_is_newer_false_menor():
     assert is_newer("v0.1.0", "v0.2.1") is False
 
 
-def test_check_latest_release_sem_token():
-    result = check_latest_release("", "owner/repo")
-    assert result is None
-
-
 def test_check_latest_release_404():
     headers = Message()
     error = urllib.error.HTTPError(url="", code=404, msg="Not Found", hdrs=headers, fp=None)
     with patch("updater.github.urllib.request.urlopen", side_effect=error):
-        result = check_latest_release("fake-token", "owner/repo")
+        result = check_latest_release("owner/repo")
     assert result is None
+
+
+def _mock_release_response(payload: dict):
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = json.dumps(payload).encode()
+    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    return mock_resp
+
+
+def test_check_latest_release_nao_envia_authorization():
+    fake_response = {
+        "tag_name": "v0.3.0",
+        "body": "Novidades",
+        "assets": [
+            {
+                "name": "DracmaSort.exe",
+                "browser_download_url": "https://example.com/DracmaSort.exe",
+                "size": 1024000,
+            }
+        ],
+    }
+    with patch(
+        "updater.github.urllib.request.urlopen",
+        return_value=_mock_release_response(fake_response),
+    ) as mock_open:
+        result = check_latest_release("owner/repo")
+
+    assert result is not None
+    assert result.tag == "v0.3.0"
+    assert result.asset_size == 1024000
+
+    req = mock_open.call_args.args[0]
+    assert req.headers.get("Accept") == "application/vnd.github+json"
+    assert req.headers.get("Authorization") is None
 
 
 def test_check_latest_release_com_asset():
@@ -61,13 +91,12 @@ def test_check_latest_release_com_asset():
             }
         ],
     }
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = json.dumps(fake_response).encode()
-    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
-    mock_resp.__exit__ = MagicMock(return_value=False)
 
-    with patch("updater.github.urllib.request.urlopen", return_value=mock_resp):
-        result = check_latest_release("fake-token", "owner/repo")
+    with patch(
+        "updater.github.urllib.request.urlopen",
+        return_value=_mock_release_response(fake_response),
+    ):
+        result = check_latest_release("owner/repo")
 
     assert result is not None
     assert result.tag == "v0.3.0"
@@ -80,15 +109,34 @@ def test_check_latest_release_sem_asset():
         "body": "Sem exe",
         "assets": [],
     }
+
+    with patch(
+        "updater.github.urllib.request.urlopen",
+        return_value=_mock_release_response(fake_response),
+    ):
+        result = check_latest_release("owner/repo")
+
+    assert result is None
+
+
+def test_download_asset_nao_envia_authorization(tmp_path):
     mock_resp = MagicMock()
-    mock_resp.read.return_value = json.dumps(fake_response).encode()
+    mock_resp.headers.get.return_value = "4"
+    mock_resp.read.side_effect = [b"abcd", b""]
     mock_resp.__enter__ = MagicMock(return_value=mock_resp)
     mock_resp.__exit__ = MagicMock(return_value=False)
 
-    with patch("updater.github.urllib.request.urlopen", return_value=mock_resp):
-        result = check_latest_release("fake-token", "owner/repo")
+    dest = tmp_path / "DracmaSort.exe"
+    with patch(
+        "updater.download.urllib.request.urlopen",
+        return_value=mock_resp,
+    ) as mock_open:
+        download_asset("https://example.com/DracmaSort.exe", dest)
 
-    assert result is None
+    req = mock_open.call_args.args[0]
+    assert req.headers.get("Accept") == "application/octet-stream"
+    assert req.headers.get("Authorization") is None
+    assert dest.read_bytes() == b"abcd"
 
 
 def test_temp_download_path_formatacao():

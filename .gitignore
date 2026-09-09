@@ -24,7 +24,6 @@ src/cache/
 
 # Configuração local (contém credenciais — não versionar)
 .env
-.env.updater
 
 # IDEs e SO
 .idea/

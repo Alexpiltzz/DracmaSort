@@ -30,14 +30,14 @@ GITHUB_ASSET_NAME = "DracmaSort.exe"
 
 
 def _release_token() -> str:
-    """Resolve o token de publicação das variáveis de ambiente.
+    """Resolve o token de publicação do ambiente de desenvolvimento.
 
-    O token de release tem permissão de escrita (Contents: Read+Write) e
-    NUNCA é embutido no executável. Precedência:
-        1. ``GITHUB_RELEASE_TOKEN`` (recomendado — escopo de escrita)
-        2. ``GITHUB_TOKEN`` (fallback para compatibilidade)
+    O token de release tem permissão de escrita (Contents: Read+Write) para
+    publicar Releases, NUNCA é embutido no executável e é definido apenas no
+    shell do desenvolvedor:
+        $env:GITHUB_RELEASE_TOKEN = "..."
     """
-    return os.environ.get("GITHUB_RELEASE_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    return os.environ.get("GITHUB_RELEASE_TOKEN", "")
 
 
 def _read_version(repo_root: Path) -> str:

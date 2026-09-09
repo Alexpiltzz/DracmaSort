@@ -41,7 +41,7 @@ def load_env_file(path: Path | None = None, *, prefix: str = "") -> None:
 
     Quando ``prefix`` é informado, apenas as variáveis cujo nome começa com o
     prefixo são carregadas — usado para impedir que credenciais de outros
-    subsistemas (ex.: ``GITHUB_TOKEN``) entrem no ambiente via SMTP.
+    subsistemas entrem no ambiente via SMTP.
     """
     env_path = path or project_root() / ".env"
     if not env_path.is_file():

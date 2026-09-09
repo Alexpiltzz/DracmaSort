@@ -18,17 +18,7 @@ Write-Output "Versão: $version (tag: $tag)"
 # --- Resolver token (escrita — APENAS DEV) ---
 $token = $env:GITHUB_RELEASE_TOKEN
 if (-not $token) {
-    Write-Output "GITHUB_RELEASE_TOKEN não definido. Tentando GITHUB_TOKEN (legado)..."
-    $token = $env:GITHUB_TOKEN
-}
-if (-not $token) {
-    Write-Output "Nenhum token no ambiente. Tentando git credential fill..."
-    $credInput = "protocol=https`nhost=github.com`n"
-    $cred = $credInput | git credential fill 2>$null
-    $token = ($cred | Select-String '^password=').ToString().Substring(9)
-}
-if (-not $token) {
-    Write-Error "Nenhum token disponível. Defina GITHUB_RELEASE_TOKEN (escrita) ou configure git credentials."
+    Write-Error "GITHUB_RELEASE_TOKEN não definido. Defina $env:GITHUB_RELEASE_TOKEN no shell do desenvolvedor (token com permissão de escrita)."
     exit 1
 }
 

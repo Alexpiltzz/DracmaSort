@@ -173,26 +173,27 @@ O executável verifica ao iniciar se há uma release mais recente publicada no
 GitHub e, com confirmação do usuário, baixa e aplica a atualização (o `.exe`
 atual é substituído ao fechar o programa, com rollback via `DracmaSort.exe.bak`).
 
-### Configuração do updater (`.env.updater`)
+### Sem configuração de credencial
 
-Para repositórios **privados**, o updater precisa de um token **somente de
-leitura**. Crie um PAT fine-grained com permissão `Contents: Read-only` apenas
-no repositório `Alexpiltzz/Giveaways_Tools` (com expiração curta) e coloque-o
-no arquivo `.env.updater`, **ao lado do executável** — o token nunca é embutido
-no binário:
+As releases do repositório são **públicas**, então o updater funciona **sem
+token e sem arquivos `.env`** — a distribuição é apenas o `DracmaSort.exe`.
+O usuário final não precisa fornecer nenhuma credencial para verificar ou baixar
+atualizações.
 
-```dotenv
-GITHUB_TOKEN=seu_token_aqui
+### Publicação de releases (ambiente de desenvolvimento)
+
+Publicar uma nova versão continua exigindo o token de **escrita**
+(`GITHUB_RELEASE_TOKEN`), definido **somente** no shell do desenvolvedor:
+
+```powershell
+$env:GITHUB_RELEASE_TOKEN = "seu_token_com_permissao_de_escrita"
+uv run python main_exe.py --release
 ```
 
-Template pronto para copiar: `.env.updater.example`.
-
-- O `.env.updater` é **separado** do `.env`: o `load_env_file` do SMTP carrega
-  apenas as variáveis `GIVEAWAY_SMTP_*`, e o updater lê o `GITHUB_TOKEN` somente
-  quando executa (`check`/`download`) — importar o SMTP não carrega o token.
-- O token de **publicação** (`GITHUB_RELEASE_TOKEN`) é usado apenas no ambiente
-  de desenvolvimento, via `python main_exe.py --release` ou `make_release.ps1`,
-  e nunca vai para o pacote distribuído ao usuário.
+> O `GITHUB_RELEASE_TOKEN` é usado exclusivamente para criar a release e fazer
+> upload do asset. Ele **nunca** é embutido no executável, nem vai para o build,
+> nem é distribuído ao usuário final — os PATs de leitura anteriormente usados
+> pelo updater foram descontinuados.
 
 ---
 
@@ -245,7 +246,6 @@ Giveaways_Tools/
 ├── alunos_rastreados.json# Registro persistente de alunos já rastreados
 ├── pyproject.toml       # Dependências e configurações do projeto
 ├── .env.example         # Template das variáveis SMTP (carrega só GIVEAWAY_SMTP_*)
-├── .env.updater.example # Template da credencial de leitura do updater
 ├── README.md            # Documentação completa
 ├── assets/              # Recursos de interface
 │   ├── main_window.ui   # Layout da janela (Qt Designer)

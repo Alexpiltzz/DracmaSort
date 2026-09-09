@@ -20,24 +20,24 @@ class ReleaseInfo:
 
 
 def check_latest_release(
-    token: str,
     repo: str,
     asset_name: str = "DracmaSort.exe",
     *,
     timeout: int = 10,
 ) -> ReleaseInfo | None:
-    """Consulta a release mais recente no GitHub.
+    """Consulta a release mais recente no GitHub (repositório público).
+
+    Nenhuma autenticação é enviada — Releases públicas respondem via
+    GET anônimo à API.
 
     Returns:
         ``ReleaseInfo`` se encontrou uma release com o asset, ou ``None``
-        se não há release ou ocorreu erro de rede/autenticação.
+        se não há release ou ocorreu erro de rede.
     """
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     headers: dict[str, str] = {
         "Accept": "application/vnd.github+json",
     }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
 
     req = urllib.request.Request(url, headers=headers)
     try:

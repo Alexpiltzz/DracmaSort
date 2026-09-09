@@ -81,17 +81,17 @@ Storage nativo: registro do Windows (`HKCU`), config INI no Linux/macOS.
 
 - **Nenhum token é embutido no executável.** Empacotar o token via build
   (`_build_config.py`) colocaria a credencial em texto puro no bytecode — descartado.
-- **Token do updater (leitura)**: PAT fine-grained, permissão `Contents: Read-only`
-  só no repo `Alexpiltzz/Giveaways_Tools`, com expiração curta. Distribuído ao lado
-  do `.exe` num arquivo **dedicado** `GITHUB_TOKEN` em `.env.updater` (template:
-  `.env.updater.example`). Nunca no `.env` do SMTP.
+- **Updater sem autenticação**: o repositório tornou-se **público**, então o
+  updater consulta `GET /releases/latest` e baixa o asset anonimamente — **sem
+  `GITHUB_TOKEN`, sem `.env.updater`, sem header `Authorization`**. A distribuição
+  é apenas o `DracmaSort.exe`; o usuário final não fornece credencial alguma.
 - **Token de publicação (escrita)**: `GITHUB_RELEASE_TOKEN` — variável de ambiente
   **somente no dev**, usada por `python main_exe.py --release` e `make_release.ps1`.
-  Não chega ao pacote distribuído.
-- **Separação SMTP × updater**: `load_env_file(prefix=_PREFIX)` em `smtp.py` carrega
-  apenas `GIVEAWAY_SMTP_*`, impedindo que credenciais de outras áreas entrem no
-  `os.environ` via import do SMTP. O updater lê o token **somente quando executa**
-  (`check()`/`download()`), de `os.environ["GITHUB_TOKEN"]` ou de `.env.updater`.
+  Não chega ao pacote distribuído e não possui fallback para `git credential`
+  nem `GITHUB_TOKEN`.
+- **Isolamento SMTP**: `load_env_file(prefix=_PREFIX)` em `smtp.py` carrega apenas
+  `GIVEAWAY_SMTP_*`, impedindo que credenciais de outras áreas entrem no
+  `os.environ` via import do SMTP.
 
 ### Arquitetura final
 
@@ -99,8 +99,8 @@ Storage nativo: registro do Windows (`HKCU`), config INI no Linux/macOS.
 src/updater/
 ├── __init__.py          # pacote importável
 ├── version.py           # versão local + comparação semântica (is_newer)
-├── github.py            # GET /releases/latest (urllib, Bearer opcional, timeout)
-├── download.py          # download com progresso + auth header para repo privado
+├── github.py            # GET /releases/latest em repo público (urllib, sem auth, timeout)
+├── download.py          # download com progresso (sem auth)
 ├── updater.py           # UpdateWorker (QThread): check → download → apply_update
 └── _build_config.py     # config estática SEM credenciais (repo + nome do asset)
 ```
@@ -119,9 +119,9 @@ src/updater/
 |-------|----------|
 | A. Token armazenado pelo usuário (QSettings) | ❌ descartado — criptografia fraca no Windows |
 | B. Reusar `git credential fill` | ❌ descartado — dependente do credential manager |
-| C. PAT read-only distribuído | ✅ adotado (refinado): PAT `Contents: Read-only` em `.env.updater` ao lado do `.exe`, sem SMTP junto, não embutido no build |
-| D. Repo/release público | 🔲 não adotado — decisão de visibilidade |
-| Servidor intermediário / GitHub App | 🔲 fora do escopo atual; recomendado caso haja distribuição pública futura |
+| C. PAT read-only distribuído (`.env.updater`) | ✅ adotado em 2026 para repo privado; **substituído** depois que o repositório tornou-se público |
+| D. Repo/release público (sem token) | ✅ adotado: `GET /releases/latest` e download do asset anônimos, sem `.env.updater`, distribuição só do `.exe` |
+| Servidor intermediário / GitHub App | 🔲 fora do escopo atual; só se o repo voltar a ser privado |
 
 ## Status
 
@@ -131,13 +131,13 @@ src/updater/
 | 2 | Salvar no `closeEvent`          | 🔲 pendente de decisão/implementação |
 | 3 | Testes de persistência          | 🔲 pendente (comportamento já coberto indiretamente) |
 | 4 | Documentar precedência          | 📄 coberto por este doc            |
-| 5 | Atualizador automático (releases GitHub) | ✅ implementado com segurança revisada |
-| 6 | `python main_exe.py --release`  | ✅ implementado (publica release + asset) |
-| 7 | Separação de credenciais (`.env` SMTP / `.env.updater` / publish env) | ✅ implementado |
+| 5 | Atualizador automático (releases GitHub) | ✅ implementado (repo público, sem token) |
+| 6 | `python main_exe.py --release`  | ✅ implementado (publica release + asset com `GITHUB_RELEASE_TOKEN` no dev) |
+| 7 | Separação de credenciais (`.env` SMTP / publish env dev) | ✅ implementado — `.env.updater` removido |
 
 > **Nota de decisão**: os itens 1–3 seguem pendentes (melhorias opcionais da
 > revisão). O item 5 (atualizador automático) foi **implementado** — ver seção
 > acima — e as decisões de segurança/autenticação estão registradas na tabela
-> "Opções de autenticação". Em caso de distribuição pública futura, revisitar a
-> opção de servidor intermediário/GitHub App para remover o PAT do ambiente do
-> usuário.
+> "Opções de autenticação". Com o repositório público, o updater é anônimo (opção
+> D) e nenhum PAT circula no ambiente do usuário. Se o repo voltar a ser privado,
+> revisitar a opção de servidor intermediário/GitHub App.

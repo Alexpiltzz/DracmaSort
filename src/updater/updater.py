@@ -9,41 +9,10 @@ from pathlib import Path
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from code_gen import __version__
-from code_gen.runtime import app_root
 from updater._build_config import GITHUB_ASSET_NAME, GITHUB_REPO
 from updater.download import download_asset, temp_download_path
 from updater.github import ReleaseInfo, check_latest_release
 from updater.version import is_newer
-
-
-def _effective_token() -> str:
-    """Resolve o token do updater somente quando ele vai ser usado.
-
-    O token NUNCA é embutido no executável e não depende do módulo SMTP
-    (importar ``delivery.smtp`` não carrega nenhuma credencial do updater).
-    É lido:
-        1. da variável de ambiente ``GITHUB_TOKEN`` (precedência — dev/testes), ou
-        2. do arquivo ``.env.updater`` ao lado do executável (distribuído junto
-           com o app, contém apenas ``GITHUB_TOKEN``).
-
-    Esta função só é chamada dentro de ``check()``/``download()``, quando o
-    updater realmente vai consultar uma Release ou baixar um asset.
-    """
-    token = os.environ.get("GITHUB_TOKEN", "")
-    if token:
-        return token
-
-    env_path = app_root() / ".env.updater"
-    if not env_path.is_file():
-        return ""
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, _, value = stripped.partition("=")
-        if key.strip() == "GITHUB_TOKEN":
-            return value.strip()
-    return ""
 
 
 class UpdateWorker(QObject):
@@ -84,12 +53,7 @@ class UpdateWorker(QObject):
 
     def check(self) -> None:
         """Verifica se há uma release mais nova disponível."""
-        token = _effective_token()
-        if not token:
-            self.error.emit("GITHUB_TOKEN não configurado. Atualização automática desabilitada.")
-            return
-
-        release = check_latest_release(token, GITHUB_REPO, GITHUB_ASSET_NAME)
+        release = check_latest_release(GITHUB_REPO, GITHUB_ASSET_NAME)
         if release is None:
             self.error.emit("Não foi possível consultar releases do GitHub.")
             return
@@ -114,13 +78,11 @@ class UpdateWorker(QObject):
 
         release = self._pending_release
         dest = temp_download_path(release.tag, release.asset_name)
-        token = _effective_token()
         try:
             download_asset(
                 release.asset_url,
                 dest,
                 on_progress=lambda cur, tot: self.progress.emit(cur, tot),
-                token=token,
             )
         except ConnectionError as exc:
             self.error.emit(str(exc))
