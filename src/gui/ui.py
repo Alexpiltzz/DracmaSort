@@ -27,8 +27,11 @@ from code_gen.core import (
     CodeRegistry,
     NotEnoughCodesError,
     StudentRegistry,
+    draw_item,
+    format_code,
     generate_codes,
     pool_size,
+    smart_title_case,
 )
 from code_gen.io import (
     default_output_path,
@@ -46,7 +49,10 @@ from delivery.sender import send_all
 from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdown_to_html
 from updater.updater import UpdateWorker
 
+from .animations import ConfettiWidget, SorteioRevealAnimator
 from .resources import asset_path, load_qss
+from .sorteio_config import SorteioConfigDialog
+from .streaming import StreamingWindow
 
 DEFAULT_SUBJECT = "Confira seus números para o sorteio"
 DEFAULT_MESSAGE = """Olá, **{nome}**!
@@ -168,6 +174,19 @@ class MainWindow(QMainWindow):
         self._update_worker: UpdateWorker | None = None
         self._update_thread: QThread | None = None
         self._download_thread: QThread | None = None
+        self._sorteio_pool: list[str] = []
+        self._sorteio_history: list[str] = []
+        self._sorteio_original: list[str] = []
+        self._sorteio_animating = False
+        self._sorteio_has_result = False
+        self._reveal_animator: SorteioRevealAnimator | None = None
+        self._streaming_window: StreamingWindow | None = None
+        self._sorteio_source_index = 0
+        self._sorteio_repetition = False
+        self._sorteio_quantity = 1
+        self._sorteio_sequential = False
+        self._sorteio_font_family = "Segoe UI"
+        self._sorteio_font_size = 34
 
         self._build_ui()
         self._load_smtp_config()
@@ -179,6 +198,8 @@ class MainWindow(QMainWindow):
         uic.loadUi(asset_path("main_window.ui"), self)
         self._apply_runtime_geometry()
         self._bind_signals()
+        self._load_sorteio_config()
+        self._load_sorteio_source()
         self._update_message_preview()
         self._apply_style()
 
@@ -195,6 +216,11 @@ class MainWindow(QMainWindow):
         operation.setStretch(operation.indexOf(self.splitter), 1)
         message = self.tabs.widget(1).layout()
         message.setStretch(message.indexOf(self.editor_splitter), 1)
+        sorteio = self.tabs.widget(2).layout()
+        sorteio.setStretch(sorteio.indexOf(self.sorteio_splitter), 1)
+        self.sorteio_splitter.setSizes([600, 100])
+        self.sorteio_splitter.setStretchFactor(0, 6)
+        self.sorteio_splitter.setStretchFactor(1, 1)
 
     def _bind_signals(self) -> None:
         self.theme_button.clicked.connect(self._toggle_theme)
@@ -214,6 +240,9 @@ class MainWindow(QMainWindow):
         self.port_input.valueChanged.connect(self._save_smtp_config)
         self.login_input.textChanged.connect(self._save_smtp_config)
         self.from_input.textChanged.connect(self._save_smtp_config)
+        self.sorteio_draw_button.clicked.connect(self._do_sorteio)
+        self.config_button.clicked.connect(self._toggle_configurator)
+        self.stream_button.clicked.connect(self._toggle_streaming)
 
     def _reset_message_template(self) -> None:
         self.subject_input.setText(DEFAULT_SUBJECT)
@@ -254,7 +283,47 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_style(self) -> None:
-        self.setStyleSheet(load_qss(self.dark_mode))
+        qss = load_qss(self.dark_mode)
+        qss += self._result_font_snippet()
+        self.setStyleSheet(qss)
+        if self._streaming_window is not None:
+            self._streaming_window.apply_stream_style(qss)
+
+    def _result_font_snippet(self) -> str:
+        family = self._sorteio_font_family
+        size = self._sorteio_font_size
+        return (
+            f'QLabel#sorteio_result {{ font-family: "{family}"; font-size: {size}px; }}\n'
+            f'QLabel#sorteio_result[codes="true"] {{ font-size: {size * 2}px; }}\n'
+            f'QLabel[class="stream-result"] {{ font-family: "{family}"; }}\n'
+        )
+
+    def _load_sorteio_config(self) -> None:
+        settings = self._app_settings()
+        self._sorteio_source_index = int(settings.value("sorteio/source_index", 0))
+        self._sorteio_repetition = settings.value("sorteio/repetition", False) in (
+            True,
+            "true",
+            "1",
+        )
+        self._sorteio_quantity = int(settings.value("sorteio/quantity", 1))
+        self._sorteio_sequential = settings.value("sorteio/sequential", False) in (
+            True,
+            "true",
+            "1",
+        )
+        self._sorteio_font_family = str(settings.value("sorteio/font_family", "Segoe UI"))
+        self._sorteio_font_size = int(settings.value("sorteio/font_size", 34))
+
+    def _toggle_configurator(self) -> None:
+        dialog = SorteioConfigDialog(self._app_settings(), self)
+        dialog.settingsApplied.connect(self._on_sorteio_config_applied)
+        dialog.exec()
+
+    def _on_sorteio_config_applied(self) -> None:
+        self._load_sorteio_config()
+        self._load_sorteio_source()
+        self._apply_style()
 
     def _toggle_theme(self) -> None:
         self.dark_mode = not self.dark_mode
@@ -300,6 +369,192 @@ class MainWindow(QMainWindow):
         self.mode_badge.setProperty("real", not simulate)
         self.mode_badge.style().unpolish(self.mode_badge)
         self.mode_badge.style().polish(self.mode_badge)
+
+    def _source_pool(self) -> list[str]:
+        """Devolve a lista de itens (nomes ou códigos) da fonte selecionada."""
+        if self._sorteio_source_index == 0:
+            try:
+                names = StudentRegistry(default_student_registry_path()).load()
+            except (ValueError, OSError) as exc:
+                raise OSError(f"Não foi possível ler alunos_rastreados.json: {exc}") from exc
+            return sorted(smart_title_case(name) for name in names)
+        try:
+            codes = CodeRegistry(default_registry_path()).load()
+        except (ValueError, OSError) as exc:
+            raise OSError(f"Não foi possível ler codigos_emitidos.json: {exc}") from exc
+        return [format_code(code) for code in sorted(codes)]
+
+    def _set_result_codes_property(self, widget, value: bool) -> None:
+        widget.setProperty("codes", value)
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    def _show_codes_font(self) -> bool:
+        return self._is_codes_source() and self._sorteio_has_result
+
+    def _set_sorteio_winner(self, winner: str) -> None:
+        self._sorteio_has_result = True
+        self.sorteio_result_title.setText("🎉 VENCEDOR 🎉")
+        self.sorteio_result.setText(str(winner))
+        for widget in (self.sorteio_result, self.sorteio_result_frame):
+            widget.setProperty("winner", True)
+            widget.setProperty("animating", False)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self._set_result_codes_property(self.sorteio_result, self._show_codes_font())
+
+    def _set_sorteio_controls_enabled(self, enabled: bool) -> None:
+        self.sorteio_draw_button.setEnabled(enabled)
+        self.config_button.setEnabled(enabled)
+
+    def _is_codes_source(self) -> bool:
+        return self._sorteio_source_index == 1
+
+    def _load_sorteio_source(self) -> None:
+        if not hasattr(self, "sorteio_result"):
+            return
+        try:
+            self._sorteio_original = self._source_pool()
+        except OSError as exc:
+            self._sorteio_original = []
+            QMessageBox.critical(self, "Não foi possível carregar os dados", str(exc))
+        self._sorteio_pool = list(self._sorteio_original)
+        self._sorteio_history.clear()
+        self.sorteio_history.clear()
+        self._sorteio_has_result = False
+        self.sorteio_result_title.setText("VENCEDOR")
+        self.sorteio_result.setText('Clique em "Sortear" para começar.')
+        for widget in (self.sorteio_result, self.sorteio_result_frame):
+            widget.setProperty("winner", False)
+            widget.setProperty("animating", False)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self._set_result_codes_property(self.sorteio_result, False)
+        total = len(self._sorteio_pool)
+        self._set_status(f"Fonte carregada: {total} item(ns) disponível(is) para o sorteio.")
+        self._update_streaming_from_state()
+
+    def _draw_winners(self) -> list[str]:
+        winners: list[str] = []
+        for _ in range(self._sorteio_quantity):
+            if not self._sorteio_pool:
+                break
+            if self._sorteio_sequential:
+                item = self._sorteio_pool[0]
+                if not self._sorteio_repetition:
+                    self._sorteio_pool.pop(0)
+            else:
+                item = draw_item(self._sorteio_pool, self._sorteio_repetition)
+            winners.append(item)
+        return winners
+
+    def _do_sorteio(self) -> None:
+        if not hasattr(self, "sorteio_draw_button"):
+            return
+        if self._sorteio_animating:
+            return
+        if not self._sorteio_pool:
+            QMessageBox.information(
+                self,
+                "Lista vazia",
+                "Não há itens disponíveis para o sorteio. Troque a fonte ou reinicie a aba.",
+            )
+            return
+        winners = self._draw_winners()
+        if not winners:
+            QMessageBox.information(
+                self,
+                "Lista vazia",
+                "Não há itens suficientes para o sorteio. Troque a fonte ou reinicie a aba.",
+            )
+            return
+        self._start_reveal(self._sorteio_original, winners)
+
+    def _start_reveal(self, original: list[str], winners: list[str]) -> None:
+        self._sorteio_animating = True
+        self._sorteio_has_result = False
+        self._set_sorteio_controls_enabled(False)
+        self._set_result_codes_property(self.sorteio_result, self._show_codes_font())
+        self.sorteio_result_title.setText("SORTEANDO...")
+        self.sorteio_result.setText("🎲")
+        for widget in (self.sorteio_result, self.sorteio_result_frame):
+            widget.setProperty("winner", False)
+            widget.setProperty("animating", True)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        display = "\n".join(winners)
+        excluded = set(winners)
+        teaser = [item for item in original if item not in excluded] or list(original)
+        self._reveal_animator = SorteioRevealAnimator(self)
+        self._reveal_animator.tick.connect(self.sorteio_result.setText)
+        if self._streaming_window is not None and self._streaming_window.isVisible():
+            self._streaming_window.update_title("SORTEANDO...")
+            self._reveal_animator.tick.connect(self._streaming_window.update_winner)
+        self._reveal_animator.finished.connect(lambda drawn: self._finish_reveal(drawn, winners))
+        self._reveal_animator.start(teaser, display)
+        self._set_status("Rolando o sorteio...")
+
+    def _finish_reveal(self, display: str, winners: list[str]) -> None:
+        self._sorteio_animating = False
+        self._reveal_animator = None
+        for winner in winners:
+            self._sorteio_history.append(winner)
+            self.sorteio_history.appendPlainText(
+                f"{len(self._sorteio_history)}º sorteado: {winner}"
+            )
+        self._set_sorteio_winner(display)
+        self._set_sorteio_controls_enabled(True)
+        self._update_streaming_from_state()
+        remaining = len(self._sorteio_pool)
+        detail = ", ".join(winners)
+        if self._sorteio_repetition:
+            detail = f"Sorteados: {detail} (com repetição)."
+        else:
+            detail = f"Sorteados: {detail} (sem repetição). Restam {remaining} item(ns)."
+        self._set_status(detail)
+        self._spawn_confetti()
+        self._celebrate_streaming()
+
+    def _spawn_confetti(self) -> None:
+        confetti = ConfettiWidget(self.sorteio_result_frame)
+        confetti.start()
+
+    def _celebrate_streaming(self) -> None:
+        if self._streaming_window is not None and self._streaming_window.isVisible():
+            self._streaming_window.celebrate()
+
+    def _toggle_streaming(self) -> None:
+        if self._streaming_window is None:
+            self._streaming_window = StreamingWindow(self)
+            qss = load_qss(self.dark_mode)
+            self._streaming_window.apply_stream_style(qss)
+            self._streaming_window.closed.connect(self._on_streaming_window_closed)
+        if self._streaming_window.isVisible():
+            self._streaming_window.hide()
+            self.stream_button.setChecked(False)
+            self.stream_button.setText("Tela")
+            return
+        self._streaming_window.show()
+        self._streaming_window.raise_()
+        self._streaming_window.activateWindow()
+        self._streaming_window.update_title(self.sorteio_result_title.text())
+        self._streaming_window.update_winner(self.sorteio_result.text())
+        self._streaming_window.update_history(self.sorteio_history.toPlainText())
+        self._streaming_window.set_codes_mode(self._show_codes_font())
+        self.stream_button.setChecked(True)
+        self.stream_button.setText("Fechar tela")
+
+    def _on_streaming_window_closed(self) -> None:
+        self.stream_button.setChecked(False)
+        self.stream_button.setText("Tela")
+
+    def _update_streaming_from_state(self) -> None:
+        if self._streaming_window is None or not self._streaming_window.isVisible():
+            return
+        self._streaming_window.update_title(self.sorteio_result_title.text())
+        self._streaming_window.update_winner(self.sorteio_result.text())
+        self._streaming_window.update_history(self.sorteio_history.toPlainText())
+        self._streaming_window.set_codes_mode(self._show_codes_font())
 
     def _import_spreadsheet(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(

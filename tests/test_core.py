@@ -8,15 +8,44 @@ from code_gen.core import (
     CodeRegistry,
     NotEnoughCodesError,
     StudentRegistry,
+    draw_item,
     format_code,
     generate_codes,
     pool_size,
+    smart_title_case,
 )
 
 
 def test_format_code_zero_padded():
     assert format_code(1) == "0001"
     assert format_code(9999) == "9999"
+
+
+def test_smart_title_case_maiscula_iniciais():
+    assert smart_title_case("maria silva") == "Maria Silva"
+    assert smart_title_case("ANA PAULA REIS") == "Ana Paula Reis"
+
+
+def test_smart_title_case_mantem_particulas_minusculas():
+    assert smart_title_case("MARIA DA SILVA SANTOS") == "Maria da Silva Santos"
+    assert smart_title_case("JOÃO DOS PASSOS") == "João dos Passos"
+
+
+def test_smart_title_case_capitaliza_particula_inicial():
+    assert smart_title_case("DA SILVA") == "Da Silva"
+
+
+def test_smart_title_case_hifenizado():
+    assert smart_title_case("MARIA-JOSÉ APARECIDA") == "Maria-José Aparecida"
+
+
+def test_smart_title_case_mantem_abreviacoes():
+    assert smart_title_case("J. P. ROBERTO") == "J. P. Roberto"
+
+
+def test_smart_title_case_vazio():
+    assert smart_title_case("") == ""
+    assert smart_title_case("   ") == "   "
 
 
 def test_generate_codes_quantities_and_range():
@@ -87,3 +116,32 @@ def test_student_registry_roundtrip(tmp_path):
 
 def test_student_registry_missing_file_is_empty(tmp_path):
     assert StudentRegistry(tmp_path / "ausente.json").load() == set()
+
+
+def test_draw_item_sem_repeticao_remove_do_pool():
+    pool = ["ana melo", "carlos souza", "bia lima"]
+    winner = draw_item(pool, with_repetition=False, rng=random.Random(3))
+    assert winner in ("ana melo", "carlos souza", "bia lima")
+    assert winner not in pool
+    assert len(pool) == 2
+
+
+def test_draw_item_com_repeticao_mantem_pool():
+    pool = ["ana melo", "carlos souza", "bia lima"]
+    winner = draw_item(pool, with_repetition=True, rng=random.Random(3))
+    assert winner in pool
+    assert len(pool) == 3
+
+
+def test_draw_item_lista_vazia_levanta_erro():
+    with pytest.raises(ValueError):
+        draw_item([], with_repetition=True)
+
+
+def test_draw_item_sem_repeticao_esgota_todos():
+    pool = ["ana melo", "carlos souza", "bia lima"]
+    sorteados = [
+        draw_item(pool, with_repetition=False, rng=random.Random(seed)) for seed in range(3)
+    ]
+    assert pool == []
+    assert set(sorteados) == {"ana melo", "carlos souza", "bia lima"}

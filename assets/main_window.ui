@@ -718,10 +718,175 @@ Atenciosamente,
           <property name="wordWrap">
            <bool>true</bool>
           </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
+</widget>
+         </item>
+        </layout>
+       </widget>
+       <widget class="QWidget" name="sorteio_tab">
+        <attribute name="title">
+         <string>Sorteio</string>
+        </attribute>
+        <layout class="QVBoxLayout" name="sorteio_layout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>16</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QSplitter" name="sorteio_splitter">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <widget class="QFrame" name="sorteio_result_frame">
+            <property name="frameShape">
+             <enum>QFrame::StyledPanel</enum>
+            </property>
+            <layout class="QVBoxLayout" name="sorteio_result_layout">
+             <property name="leftMargin">
+              <number>20</number>
+             </property>
+             <property name="topMargin">
+              <number>20</number>
+             </property>
+             <property name="rightMargin">
+              <number>20</number>
+             </property>
+             <property name="bottomMargin">
+              <number>20</number>
+             </property>
+             <item>
+              <spacer name="sorteio_result_spacer_top">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <layout class="QVBoxLayout" name="sorteio_result_center">
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="sorteio_result_title">
+                 <property name="text">
+                  <string>VENCEDOR</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="sorteio_result">
+                 <property name="text">
+                  <string>Clique em "Sortear" para começar.</string>
+                 </property>
+                 <property name="alignment">
+                  <set>Qt::AlignCenter</set>
+                 </property>
+                 <property name="wordWrap">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </item>
+             <item>
+              <spacer name="sorteio_result_spacer_bottom">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+               <property name="sizeType">
+                <enum>QSizePolicy::Expanding</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
+           <widget class="QGroupBox" name="sorteio_history_group">
+            <property name="title">
+             <string>Histórico</string>
+            </property>
+            <layout class="QVBoxLayout" name="sorteio_history_layout">
+             <item>
+              <widget class="QPlainTextEdit" name="sorteio_history">
+               <property name="readOnly">
+                <bool>true</bool>
+               </property>
+               <property name="placeholderText">
+                <string>Itens sorteados aqui.</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </widget>
+         </item>
+<item>
+           <layout class="QHBoxLayout" name="sorteio_controls">
+            <item>
+             <widget class="QPushButton" name="sorteio_draw_button">
+              <property name="text">
+               <string>Sortear</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="config_button">
+              <property name="text">
+               <string>Configurar</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="stream_button">
+              <property name="text">
+               <string>Tela</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="sorteio_controls_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+        </layout>
+       </widget>
      </widget>
     </item>
    </layout>

@@ -17,11 +17,27 @@ QPushButton:hover { background: #fff0e5; border-color: #e98a4e; }
 QPushButton:disabled { background: #ecebe8; color: #aaa7a1; border-color: #e2dfda; }
 QPushButton#import_button, QPushButton#send_button { background: #e8752b; color: white; border: none; }
 QPushButton#import_button:hover, QPushButton#send_button:hover { background: #c95b19; }
+QPushButton#stream_button:checked { background: #e8752b; color: white; border: none; }
+QPushButton#stream_button:checked:hover { background: #c95b19; }
 QTableWidget, QPlainTextEdit { background: rgba(255,255,255,235); border: 1px solid #dedbd5; gridline-color: #efede9; alternate-background-color: #faf9f7; }
 QTextBrowser { background: #ffffff; border: 1px solid #dedbd5; }
 QHeaderView::section { background: #f0eee9; color: #5b5751; border: none; border-bottom: 1px solid #dedbd5; padding: 7px; font-weight: 700; }
 QLineEdit, QSpinBox, QComboBox { background: rgba(255,255,255,235); border: 1px solid #d8d4ce; border-radius: 5px; padding: 6px; }
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border: 2px solid #e8752b; }
+QFrame#sorteio_result_frame { background: rgba(255,255,255,190); border: 1px solid #e1ded8; border-radius: 12px; }
+QLabel#sorteio_result_title { color: #918a81; font-size: 16px; font-weight: 700; }
+QLabel#sorteio_result { color: #e8752b; font-size: 34px; font-weight: 800; }
+QLabel#sorteio_result[codes="true"] { font-size: 68px; }
+QFrame#sorteio_result_frame[winner="true"] { border: 2px solid #e8752b; background: #fff0e5; }
+QLabel#sorteio_result[winner="true"] { color: #c95b19; }
+QFrame#sorteio_result_frame[animating="true"] { border: 2px dashed #e8752b; background: rgba(255,240,229,120); }
+QFrame#streaming_result_frame { background: #ffffff; border: 1px solid #dedbd5; border-radius: 14px; }
+QLabel[class="stream-title"] { color: #918a81; font-size: 20px; font-weight: 700; }
+QLabel[class="stream-result"] { color: #e8752b; font-size: 64px; font-weight: 800; }
+QLabel[class="stream-result"][codes="true"] { font-size: 128px; }
+ConfettiWidget { background: transparent; border: none; }
+QPlainTextEdit#sorteio_history { font-size: 13px; }
+QPlainTextEdit#streaming_history { font-size: 15px; }
 QTabBar::tab { background: transparent; color: #817b73; padding: 9px 18px; border-bottom: 2px solid transparent; font-weight: 600; }
 QTabBar::tab:selected { color: #c95b19; border-bottom: 2px solid #e8752b; }
 QProgressBar { border: 1px solid #d8d4ce; border-radius: 6px; text-align: center; background: #ffffff; }
