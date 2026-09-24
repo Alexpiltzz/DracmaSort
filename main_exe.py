@@ -106,7 +106,25 @@ def _git_log_since_last_tag(repo_root: Path, version: str) -> str:
             check=False,
         )
         if result.returncode != 0:
-            return ""
+            # Tag da versão ainda não existe (primeiro release); usa a última tag.
+            describe = subprocess.run(
+                ["git", "describe", "--tags", "--abbrev=0"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if describe.returncode != 0:
+                return ""
+            result = subprocess.run(
+                ["git", "log", "--oneline", f"{describe.stdout.strip()}..HEAD"],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                return ""
         lines = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
         return "\n".join(f"- {line}" for line in lines)
     except FileNotFoundError:
