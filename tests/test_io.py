@@ -1,11 +1,18 @@
+import json
+
 import pytest
 from openpyxl import Workbook
 
+from code_gen import io as io_mod
 from code_gen.io import (
-    default_registry_path,
+    KEY_ALUNOS_RASTREADOS,
+    KEY_ALUNOS_SORTEADOS,
+    KEY_CODIGOS_EMITIDOS,
+    KEY_CODIGOS_SORTEADOS,
+    default_config_path,
     default_report_path,
-    default_student_registry_path,
     filter_new_students,
+    migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
     write_output_csv,
@@ -46,6 +53,26 @@ def test_read_csv_skips_invalid_rows(tmp_path):
     assert [record["aluno"] for record in records] == ["Ana Melo", "Carlos Rocha"]
     assert [record["email_valido"] for record in records] == [True, False]
     assert len(warnings) == 3
+
+
+def test_read_csv_aliases_planilha_sistema(tmp_path):
+    src = tmp_path / "entrada_sistema.csv"
+    src.write_text(
+        "Nome Completo;Responsável Financeiro;E-Mail do Responsável Financeiro;"
+        "Quantidade;Materia;Periodo\n"
+        "Maria Silva;Joao Pereira;responsavel1@ex.com;2;Mat;Manha\n"
+        "Ana Melo;Carlos Melo;responsavel2@ex.com;1;Mat;Tarde\n",
+        encoding="utf-8-sig",
+    )
+    records, warnings = read_spreadsheet(src)
+    assert [record["aluno"] for record in records] == ["Maria Silva", "Ana Melo"]
+    assert [record["nome"] for record in records] == ["Joao Pereira", "Carlos Melo"]
+    assert [record["email"] for record in records] == [
+        "responsavel1@ex.com",
+        "responsavel2@ex.com",
+    ]
+    assert [record["quantidade"] for record in records] == [2, 1]
+    assert warnings == []
 
 
 def test_read_csv_missing_columns(tmp_path):
@@ -98,16 +125,62 @@ def test_write_output_csv(tmp_path):
     assert text.splitlines()[0] == "Aluno;Nome;E-mail;Códigos"
 
 
-def test_default_registry_path_points_to_project_root():
-    parts = default_registry_path().parts
+def test_default_config_path_points_to_project_root():
+    parts = default_config_path().parts
     assert "Giveaways_Tools" in parts
-    assert default_registry_path().name == "codigos_emitidos.json"
+    assert default_config_path().name == "config.json"
 
 
-def test_default_student_registry_path_points_to_project_root():
-    parts = default_student_registry_path().parts
-    assert "Giveaways_Tools" in parts
-    assert default_student_registry_path().name == "alunos_rastreados.json"
+def test_migrate_legacy_config_cria_config_e_remove_legados(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    (tmp_path / "codigos_emitidos.json").write_text("[2, 1, 2]", encoding="utf-8")
+    (tmp_path / "alunos_rastreados.json").write_text('["ana melo"]', encoding="utf-8")
+    (tmp_path / "codigos_sorteados.json").write_text("[7]", encoding="utf-8")
+    (tmp_path / "alunos_sorteados.json").write_text('["Bia Lima"]', encoding="utf-8")
+
+    config = tmp_path / "config.json"
+    assert migrate_legacy_config(config) is True
+    data = json.loads(config.read_text(encoding="utf-8"))
+    assert data[KEY_CODIGOS_EMITIDOS] == [1, 2]
+    assert data[KEY_ALUNOS_RASTREADOS] == ["ana melo"]
+    assert data[KEY_CODIGOS_SORTEADOS] == [7]
+    assert data[KEY_ALUNOS_SORTEADOS] == ["Bia Lima"]
+    assert not (tmp_path / "codigos_emitidos.json").exists()
+    assert not (tmp_path / "alunos_rastreados.json").exists()
+    assert not (tmp_path / "codigos_sorteados.json").exists()
+    assert not (tmp_path / "alunos_sorteados.json").exists()
+
+
+def test_migrate_legacy_config_idempotente_e_nao_sobrescreve(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    (tmp_path / "codigos_emitidos.json").write_text("[3]", encoding="utf-8")
+    config = tmp_path / "config.json"
+    assert migrate_legacy_config(config) is True
+    config.write_text(json.dumps({KEY_CODIGOS_EMITIDOS: [99]}), encoding="utf-8")
+    assert migrate_legacy_config(config) is False
+    data = json.loads(config.read_text(encoding="utf-8"))
+    assert data[KEY_CODIGOS_EMITIDOS] == [99]
+
+
+def test_migrate_legacy_config_sem_legados(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    config = tmp_path / "config.json"
+    assert migrate_legacy_config(config) is True
+    data = json.loads(config.read_text(encoding="utf-8"))
+    assert data[KEY_CODIGOS_EMITIDOS] == []
+    assert data[KEY_ALUNOS_RASTREADOS] == []
+    assert data[KEY_CODIGOS_SORTEADOS] == []
+    assert data[KEY_ALUNOS_SORTEADOS] == []
+
+
+def test_migrate_legacy_config_preserva_acentos(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    (tmp_path / "alunos_sorteados.json").write_text('["Letícia"]', encoding="utf-8")
+    config = tmp_path / "config.json"
+    migrate_legacy_config(config)
+    text = config.read_text(encoding="utf-8")
+    assert "Letícia" in text
+    assert "\\u00ed" not in text
 
 
 def test_write_report_csv_e_path(tmp_path):

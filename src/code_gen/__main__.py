@@ -7,10 +7,12 @@ from pathlib import Path
 from .cli import resolve_input_path
 from .core import CodeRegistry, NotEnoughCodesError, StudentRegistry, generate_codes
 from .io import (
+    KEY_ALUNOS_RASTREADOS,
+    KEY_CODIGOS_EMITIDOS,
+    default_config_path,
     default_output_path,
-    default_registry_path,
-    default_student_registry_path,
     filter_new_students,
+    migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
     write_output_csv,
@@ -33,18 +35,8 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
-        "--registro",
-        help=(
-            "Caminho do registro de códigos usados. Padrão: codigos_emitidos.json "
-            "na raiz do projeto."
-        ),
-    )
-    parser.add_argument(
-        "--registro-alunos",
-        help=(
-            "Caminho do registro de alunos rastreados. Padrão: alunos_rastreados.json "
-            "na raiz do projeto."
-        ),
+        "--config",
+        help=("Caminho do config.json com os registros. Padrão: config.json na raiz do projeto."),
     )
     args = parser.parse_args(argv)
 
@@ -53,10 +45,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Nenhum arquivo selecionado. Abortando.")
         return 1
 
-    registry_path = Path(args.registro) if args.registro else default_registry_path()
-    student_registry_path = (
-        Path(args.registro_alunos) if args.registro_alunos else default_student_registry_path()
-    )
+    config_path = Path(args.config) if args.config else default_config_path()
+    if migrate_legacy_config(config_path):
+        print(f"Dados migrados para {config_path}")
 
     try:
         records, warnings = read_spreadsheet(input_path)
@@ -71,8 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Nenhuma linha válida encontrada para processamento.")
         return 1
 
-    registry = CodeRegistry(registry_path)
-    student_registry = StudentRegistry(student_registry_path)
+    registry = CodeRegistry(config_path, section=KEY_CODIGOS_EMITIDOS)
+    student_registry = StudentRegistry(config_path, section=KEY_ALUNOS_RASTREADOS)
     used_codes = registry.load()
     tracked_students = student_registry.load()
 
@@ -110,8 +101,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"{len(records)} pessoas atendidas, {sum(quantities)} códigos gerados.")
     print(f"Saída: {output_path}")
-    print(f"Registro atualizado: {registry_path}")
-    print(f"Registro de alunos atualizado: {student_registry_path}")
+    print(f"Registro atualizado: {config_path}")
     return 0
 
 

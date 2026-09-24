@@ -28,11 +28,13 @@ from delivery.smtp import SmtpConfig, enviar_email, montar_mensagem_html
 from .cli import resolve_input_path
 from .core import CodeRegistry, NotEnoughCodesError, StudentRegistry, generate_codes
 from .io import (
+    KEY_ALUNOS_RASTREADOS,
+    KEY_CODIGOS_EMITIDOS,
+    default_config_path,
     default_output_path,
-    default_registry_path,
     default_report_path,
-    default_student_registry_path,
     filter_new_students,
+    migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
     write_output_csv,
@@ -102,8 +104,11 @@ def _run_processamento(input_path: Path) -> list[dict] | None:
         print("Nenhuma linha válida encontrada para processamento.")
         return None
 
-    registry = CodeRegistry(default_registry_path())
-    student_registry = StudentRegistry(default_student_registry_path())
+    if migrate_legacy_config(default_config_path()):
+        print("Dados migrados para config.json")
+
+    registry = CodeRegistry(default_config_path(), section=KEY_CODIGOS_EMITIDOS)
+    student_registry = StudentRegistry(default_config_path(), section=KEY_ALUNOS_RASTREADOS)
     used_codes = registry.load()
     tracked_students = student_registry.load()
 

@@ -48,7 +48,7 @@ class SorteioConfigDialog(QDialog):
         source_box = QGroupBox("Fonte de dados")
         source_layout = QFormLayout(source_box)
         self.source_combo = QComboBox()
-        self.source_combo.addItems(["Alunos (nomes)", "Códigos"])
+        self.source_combo.addItems(["Alunos (nomes)", "Códigos", "Código + Aluno"])
         source_layout.addRow("Fonte", self.source_combo)
         root.addWidget(source_box)
 

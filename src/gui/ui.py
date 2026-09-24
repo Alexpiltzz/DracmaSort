@@ -34,14 +34,22 @@ from code_gen.core import (
     smart_title_case,
 )
 from code_gen.io import (
+    KEY_ALUNOS_RASTREADOS,
+    KEY_ALUNOS_SORTEADOS,
+    KEY_CODIGOS_EMITIDOS,
+    KEY_CODIGOS_SORTEADOS,
+    default_config_path,
     default_output_path,
-    default_registry_path,
     default_report_path,
-    default_student_registry_path,
+    excluded_codes,
     filter_new_students,
     is_valid_email,
+    latest_unified_report_path,
+    migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
+    read_unified_pairs,
+    read_unified_pool,
     write_output_csv,
     write_report_csv,
 )
@@ -50,6 +58,7 @@ from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdo
 from updater.updater import UpdateWorker
 
 from .animations import ConfettiWidget, SorteioRevealAnimator
+from .drawn_codes import DrawnCodesDialog, register_drawn_numbers, register_drawn_students
 from .resources import asset_path, load_qss
 from .sorteio_config import SorteioConfigDialog
 from .streaming import StreamingWindow
@@ -242,6 +251,7 @@ class MainWindow(QMainWindow):
         self.from_input.textChanged.connect(self._save_smtp_config)
         self.sorteio_draw_button.clicked.connect(self._do_sorteio)
         self.config_button.clicked.connect(self._toggle_configurator)
+        self.sorteados_button.clicked.connect(self._open_drawn_codes)
         self.stream_button.clicked.connect(self._toggle_streaming)
 
     def _reset_message_template(self) -> None:
@@ -371,18 +381,77 @@ class MainWindow(QMainWindow):
         self.mode_badge.style().polish(self.mode_badge)
 
     def _source_pool(self) -> list[str]:
-        """Devolve a lista de itens (nomes ou códigos) da fonte selecionada."""
-        if self._sorteio_source_index == 0:
-            try:
-                names = StudentRegistry(default_student_registry_path()).load()
-            except (ValueError, OSError) as exc:
-                raise OSError(f"Não foi possível ler alunos_rastreados.json: {exc}") from exc
-            return sorted(smart_title_case(name) for name in names)
+        """Devolve a lista de itens (nomes ou códigos) da fonte selecionada.
+
+        A base unificada é o relatório unificado mais recente de cache/; a
+        origem dos dados passa a ser o CSV em vez de config.json.
+        """
+        unificado = latest_unified_report_path()
+        if unificado is None:
+            raise OSError(
+                "Nenhum relatório unificado (relatorio_envio_unificado_*.csv) "
+                "encontrado em cache/ ou na pasta base."
+            )
         try:
-            codes = CodeRegistry(default_registry_path()).load()
+            nomes, codigos = read_unified_pool(unificado)
         except (ValueError, OSError) as exc:
-            raise OSError(f"Não foi possível ler codigos_emitidos.json: {exc}") from exc
-        return [format_code(code) for code in sorted(codes)]
+            raise OSError(
+                f"Não foi possível ler o relatório unificado {unificado.name}: {exc}"
+            ) from exc
+        drawn = self._drawn_codes()
+        drawn_students = self._drawn_students()
+        drawn_name = {normalize_name(name) for name in drawn_students}
+        if self._sorteio_source_index == 0:
+            return sorted(
+                smart_title_case(name) for name in nomes if normalize_name(name) not in drawn_name
+            )
+        try:
+            pares = read_unified_pairs(unificado)
+        except (ValueError, OSError) as exc:
+            raise OSError(
+                f"Não foi possível ler o relatório unificado {unificado.name}: {exc}"
+            ) from exc
+        excluded = excluded_codes(pares, drawn, drawn_students)
+        if self._sorteio_source_index == 1:
+            return [format_code(code) for code in sorted(codigos - excluded)]
+        return [
+            f"{format_code(code)}\n{smart_title_case(aluno)}"
+            for code, aluno in sorted(pares.items())
+            if code not in excluded and normalize_name(aluno) not in drawn_name
+        ]
+
+    def _drawn_codes(self) -> set[int]:
+        """Conjunto de códigos já sorteados, seção codigos_sorteados do config."""
+        try:
+            return CodeRegistry(default_config_path(), section=KEY_CODIGOS_SORTEADOS).load()
+        except (ValueError, OSError) as exc:
+            raise OSError(f"Não foi possível ler codigos_sorteados: {exc}") from exc
+
+    def _drawn_students(self) -> set[str]:
+        """Conjunto de alunos já sorteados, seção alunos_sorteados do config."""
+        try:
+            return StudentRegistry(default_config_path(), section=KEY_ALUNOS_SORTEADOS).load()
+        except (ValueError, OSError) as exc:
+            raise OSError(f"Não foi possível ler alunos_sorteados: {exc}") from exc
+
+    def _open_drawn_codes(self) -> None:
+        known_students: set[str] = set()
+        try:
+            unificado = latest_unified_report_path()
+            if unificado is not None:
+                known_students, _ = read_unified_pool(unificado)
+        except (ValueError, OSError):
+            known_students = set()
+        dialog = DrawnCodesDialog(
+            default_config_path(),
+            known_students,
+            self,
+        )
+        dialog.sorteadosChanged.connect(self._on_drawn_codes_changed)
+        dialog.exec()
+
+    def _on_drawn_codes_changed(self) -> None:
+        self._load_sorteio_source()
 
     def _set_result_codes_property(self, widget, value: bool) -> None:
         widget.setProperty("codes", value)
@@ -408,7 +477,7 @@ class MainWindow(QMainWindow):
         self.config_button.setEnabled(enabled)
 
     def _is_codes_source(self) -> bool:
-        return self._sorteio_source_index == 1
+        return self._sorteio_source_index in (1, 2)
 
     def _load_sorteio_source(self) -> None:
         if not hasattr(self, "sorteio_result"):
@@ -502,6 +571,11 @@ class MainWindow(QMainWindow):
             self.sorteio_history.appendPlainText(
                 f"{len(self._sorteio_history)}º sorteado: {winner}"
             )
+        if not self._sorteio_repetition:
+            if self._is_codes_source():
+                self._register_drawn_codes(winners)
+            else:
+                self._register_plain_students(winners)
         self._set_sorteio_winner(display)
         self._set_sorteio_controls_enabled(True)
         self._update_streaming_from_state()
@@ -514,6 +588,57 @@ class MainWindow(QMainWindow):
         self._set_status(detail)
         self._spawn_confetti()
         self._celebrate_streaming()
+
+    def _register_drawn_codes(self, winners: list[str]) -> None:
+        """Registra códigos e alunos sorteados para excluí-los dos próximos sorteios.
+
+        No modo "Código + Aluno" cada winner traz o código na primeira linha e o
+        nome do aluno na segunda; no modo "Códigos" só vem o código, então o
+        aluno é recuperado pelo vínculo código->aluno do relatório unificado.
+        """
+        unificado = latest_unified_report_path()
+        pares: dict[int, str] = {}
+        if unificado is not None:
+            try:
+                pares = read_unified_pairs(unificado)
+            except (ValueError, OSError) as exc:
+                self._log(f"Não foi possível ler o relatório unificado: {exc}")
+
+        numeros: list[int] = []
+        alunos: list[str] = []
+        for winner in winners:
+            linha = winner.split("\n", 1)
+            codigo = linha[0]
+            try:
+                numero = int(codigo)
+            except ValueError:
+                continue
+            numeros.append(numero)
+            nome = linha[1].strip() if len(linha) > 1 else pares.get(numero)
+            if nome:
+                alunos.append(nome)
+        if numeros:
+            try:
+                register_drawn_numbers(
+                    default_config_path(), numeros, section=KEY_CODIGOS_SORTEADOS
+                )
+            except (ValueError, OSError) as exc:
+                self._log(f"Não foi possível registrar os códigos sorteados: {exc}")
+        if alunos:
+            try:
+                register_drawn_students(default_config_path(), alunos, section=KEY_ALUNOS_SORTEADOS)
+            except (ValueError, OSError) as exc:
+                self._log(f"Não foi possível registrar os alunos sorteados: {exc}")
+
+    def _register_plain_students(self, winners: list[str]) -> None:
+        """Registra alunos sorteados na fonte de nomes (index 0) para exclusão."""
+        nomes = [name for name in winners if name.strip()]
+        if not nomes:
+            return
+        try:
+            register_drawn_students(default_config_path(), nomes, section=KEY_ALUNOS_SORTEADOS)
+        except (ValueError, OSError) as exc:
+            self._log(f"Não foi possível registrar os alunos sorteados: {exc}")
 
     def _spawn_confetti(self) -> None:
         confetti = ConfettiWidget(self.sorteio_result_frame)
@@ -585,7 +710,7 @@ class MainWindow(QMainWindow):
         if not warnings:
             self._log("Planilha validada sem avisos.")
         try:
-            tracked = StudentRegistry(default_student_registry_path()).load()
+            tracked = StudentRegistry(default_config_path(), section=KEY_ALUNOS_RASTREADOS).load()
             _, already_tracked = filter_new_students(records, tracked)
             if already_tracked:
                 self._log(
@@ -600,7 +725,9 @@ class MainWindow(QMainWindow):
         self.participants_metric_value.setText(str(len(records)))
         self.codes_metric_value.setText("0")
         try:
-            available = pool_size(CodeRegistry(default_registry_path()).load())
+            available = pool_size(
+                CodeRegistry(default_config_path(), section=KEY_CODIGOS_EMITIDOS).load()
+            )
             self.available_metric_value.setText(f"{available:,}".replace(",", "."))
         except Exception as exc:  # noqa: BLE001 - o usuario ainda pode corrigir o registro depois
             self.available_metric_value.setText("?")
@@ -622,8 +749,8 @@ class MainWindow(QMainWindow):
     def _generate_codes(self) -> None:
         if not self.input_path or not self.input_records:
             return
-        registry = CodeRegistry(default_registry_path())
-        student_registry = StudentRegistry(default_student_registry_path())
+        registry = CodeRegistry(default_config_path(), section=KEY_CODIGOS_EMITIDOS)
+        student_registry = StudentRegistry(default_config_path(), section=KEY_ALUNOS_RASTREADOS)
         try:
             used_codes = registry.load()
             tracked_students = student_registry.load()
@@ -998,6 +1125,8 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     """Abre a aplicacao grafica."""
+    if migrate_legacy_config(default_config_path()):
+        print("Dados migrados para config.json")
     app = QApplication(sys.argv)
     app.setApplicationName("Central de Sorteios")
     window = MainWindow()

@@ -853,13 +853,20 @@ Atenciosamente,
               </property>
              </widget>
             </item>
-            <item>
-             <widget class="QPushButton" name="config_button">
-              <property name="text">
-               <string>Configurar</string>
-              </property>
-             </widget>
-            </item>
+<item>
+              <widget class="QPushButton" name="config_button">
+               <property name="text">
+                <string>Configurar</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="sorteados_button">
+               <property name="text">
+                <string>Sorteados</string>
+               </property>
+              </widget>
+             </item>
             <item>
              <widget class="QPushButton" name="stream_button">
               <property name="text">

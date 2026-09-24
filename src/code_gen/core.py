@@ -15,35 +15,83 @@ class NotEnoughCodesError(Exception):
 
 
 class CodeRegistry:
-    """Registro persistente dos códigos já sorteados entre execuções."""
+    """Registro persistente dos códigos já sorteados entre execuções.
 
-    def __init__(self, path: Path):
+    Quando ``section`` é informado, o registro vive dentro de um arquivo de
+    configuração no formato ``{"chave": [codigos...]}``, preservando as demais
+    seções. Sem ``section``, o arquivo é tratado como lista simples de códigos.
+    """
+
+    def __init__(self, path: Path, section: str | None = None):
         self.path = Path(path)
+        self.section = section
 
     def load(self) -> set[int]:
         if not self.path.exists():
             return set()
         with self.path.open("r", encoding="utf-8") as fh:
-            return {int(code) for code in json.load(fh)}
+            data = json.load(fh)
+        if self.section is not None:
+            values = data.get(self.section, []) if isinstance(data, dict) else []
+            return {int(code) for code in values}
+        return {int(code) for code in data}
 
     def save(self, codes: set[int]) -> None:
+        if self.section is not None:
+            data: dict[str, list] = {}
+            if self.path.exists():
+                try:
+                    with self.path.open("r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                except (json.JSONDecodeError, OSError):
+                    data = {}
+                if not isinstance(data, dict):
+                    data = {}
+            data[self.section] = sorted(codes)
+            with self.path.open("w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2)
+            return
         with self.path.open("w", encoding="utf-8") as fh:
             json.dump(sorted(codes), fh, indent=2)
 
 
 class StudentRegistry:
-    """Registro persistente de alunos já rastreados entre execuções."""
+    """Registro persistente de alunos já rastreados entre execuções.
 
-    def __init__(self, path: Path):
+    Quando ``section`` é informado, o registro vive dentro de um arquivo de
+    configuração no formato ``{"chave": [alunos...]}``, preservando as demais
+    seções. Sem ``section``, o arquivo é tratado como lista simples de alunos.
+    """
+
+    def __init__(self, path: Path, section: str | None = None):
         self.path = Path(path)
+        self.section = section
 
     def load(self) -> set[str]:
         if not self.path.exists():
             return set()
         with self.path.open("r", encoding="utf-8") as fh:
-            return {str(name) for name in json.load(fh)}
+            data = json.load(fh)
+        if self.section is not None:
+            values = data.get(self.section, []) if isinstance(data, dict) else []
+            return {str(name) for name in values}
+        return {str(name) for name in data}
 
     def save(self, students: set[str]) -> None:
+        if self.section is not None:
+            data: dict[str, list] = {}
+            if self.path.exists():
+                try:
+                    with self.path.open("r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                except (json.JSONDecodeError, OSError):
+                    data = {}
+                if not isinstance(data, dict):
+                    data = {}
+            data[self.section] = sorted(students)
+            with self.path.open("w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=2)
+            return
         with self.path.open("w", encoding="utf-8") as fh:
             json.dump(sorted(students), fh, indent=2)
 

@@ -20,6 +20,9 @@ assets/icone.ico
 # Dados gerados em runtime
 codigos_emitidos.json
 alunos_rastreados.json
+alunos_sorteados.json
+codigos_sorteados.json
+config.json
 src/cache/
 
 # Configuração local (contém credenciais — não versionar)

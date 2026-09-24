@@ -118,6 +118,34 @@ def test_student_registry_missing_file_is_empty(tmp_path):
     assert StudentRegistry(tmp_path / "ausente.json").load() == set()
 
 
+def test_registry_section_roundtrip_preserva_outras(tmp_path):
+    path = tmp_path / "config.json"
+    a = CodeRegistry(path, section="codigos_emitidos")
+    b = StudentRegistry(path, section="alunos_rastreados")
+    a.save({1, 42})
+    b.save({"ana melo"})
+    assert a.load() == {1, 42}
+    assert b.load() == {"ana melo"}
+    a.save({1, 42, 99})
+    assert b.load() == {"ana melo"}
+
+
+def test_registry_section_chave_ausente_eh_vazio(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"outra": [1]}', encoding="utf-8")
+    assert CodeRegistry(path, section="codigos_emitidos").load() == set()
+
+
+def test_registry_section_arquivo_lista_simples_eh_vazio(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text("[1, 2]", encoding="utf-8")
+    assert CodeRegistry(path, section="codigos_emitidos").load() == set()
+
+
+def test_registry_section_missing_file_eh_vazio(tmp_path):
+    assert CodeRegistry(tmp_path / "config.json", section="codigos_emitidos").load() == set()
+
+
 def test_draw_item_sem_repeticao_remove_do_pool():
     pool = ["ana melo", "carlos souza", "bia lima"]
     winner = draw_item(pool, with_repetition=False, rng=random.Random(3))

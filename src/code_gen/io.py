@@ -1,16 +1,24 @@
 """Leitura de planilhas (xlsx/csv) e escrita do CSV de saída."""
 
 import csv
+import json
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
 
+from .core import MAX_CODE, MIN_CODE
 from .runtime import app_root
 
 OUTPUT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos"]
 REPORT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
+UNIFIED_REPORT_PATTERN = "relatorio_envio_unificado_*.csv"
+
+KEY_CODIGOS_EMITIDOS = "codigos_emitidos"
+KEY_ALUNOS_RASTREADOS = "alunos_rastreados"
+KEY_CODIGOS_SORTEADOS = "codigos_sorteados"
+KEY_ALUNOS_SORTEADOS = "alunos_sorteados"
 
 
 def _normalize(value: str) -> str:
@@ -32,11 +40,11 @@ def _map_columns(headers: list) -> dict[str, int | None]:
     }
     for index, header in enumerate(headers):
         key = _normalize(header)
-        if key in {"aluno", "aluno_nome", "student"}:
+        if key in {"aluno", "aluno_nome", "student", "nome completo"}:
             columns["aluno"] = index
-        elif key in {"nome", "name", "participante"}:
+        elif key in {"nome", "name", "participante", "responsavel financeiro"}:
             columns["nome"] = index
-        elif key in {"email", "e-mail", "correio"}:
+        elif key in {"email", "e-mail", "correio", "e-mail do responsavel financeiro"}:
             columns["email"] = index
         elif key in {"quantidade", "qtd", "qty", "numero", "n"}:
             columns["quantidade"] = index
@@ -188,9 +196,131 @@ def default_report_path(input_path: Path) -> Path:
     return Path(input_path).parent / f"relatorio_envio_{timestamp}.csv"
 
 
-def default_registry_path() -> Path:
-    return app_root() / "codigos_emitidos.json"
+def latest_unified_report_path(base_dir: Path | None = None) -> Path | None:
+    """Devolve o relatório unificado mais recente (cache/ e pasta base).
+
+    Procura por ``relatorio_envio_unificado_*.csv`` tanto em ``cache/`` quanto
+    na pasta raiz do aplicativo e devolve o mais recente, ou ``None``.
+    """
+    raiz = Path(base_dir) if base_dir else app_root()
+    candidatos: list[Path] = []
+    for diretorio in (raiz / "cache", raiz):
+        if not diretorio.exists():
+            continue
+        candidatos.extend(diretorio.glob(UNIFIED_REPORT_PATTERN))
+    candidatos.sort(key=lambda arquivo: arquivo.stat().st_mtime, reverse=True)
+    return candidatos[0] if candidatos else None
 
 
-def default_student_registry_path() -> Path:
-    return app_root() / "alunos_rastreados.json"
+def read_unified_pool(path: Path) -> tuple[set[str], set[int]]:
+    """Lê o unificado e devolve (nomes de alunos, códigos) das linhas com Status=Sucesso.
+
+    Cada linha agrupa um aluno com seus códigos; o conjunto de códigos é a
+    união de todos os códigos enviados com sucesso.
+    """
+    nomes: set[str] = set()
+    codigos: set[int] = set()
+    with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter=";")
+        for linha in reader:
+            if (linha.get("Status") or "").strip() != "Sucesso":
+                continue
+            aluno = (linha.get("Aluno") or "").strip()
+            if aluno:
+                nomes.add(aluno)
+            for codigo in (linha.get("Códigos") or "").split(","):
+                codigo = codigo.strip()
+                if not codigo:
+                    continue
+                try:
+                    numero = int(codigo)
+                except ValueError:
+                    continue
+                if MIN_CODE <= numero <= MAX_CODE:
+                    codigos.add(numero)
+    return nomes, codigos
+
+
+def read_unified_pairs(path: Path) -> dict[int, str]:
+    """Lê o unificado e devolve {código: aluno} das linhas com Status=Sucesso.
+
+    Cada linha vincula um aluno aos seus códigos; o código é mapeado para o
+    aluno que o recebeu. Em caso de duplicidade, o primeiro vínculo vence.
+    """
+    pares: dict[int, str] = {}
+    with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter=";")
+        for linha in reader:
+            if (linha.get("Status") or "").strip() != "Sucesso":
+                continue
+            aluno = (linha.get("Aluno") or "").strip()
+            if not aluno:
+                continue
+            for codigo in (linha.get("Códigos") or "").split(","):
+                codigo = codigo.strip()
+                if not codigo:
+                    continue
+                try:
+                    numero = int(codigo)
+                except ValueError:
+                    continue
+                if MIN_CODE <= numero <= MAX_CODE and numero not in pares:
+                    pares[numero] = aluno
+    return pares
+
+
+def default_config_path() -> Path:
+    return app_root() / "config.json"
+
+
+def migrate_legacy_config(config_path: Path) -> bool:
+    """Migra os registros JSON antigos para o config.json.
+
+    Devolve True quando a migração aconteceu. Os arquivos legados
+    (codigos_emitidos.json, alunos_rastreados.json, codigos_sorteados.json e
+    alunos_sorteados.json) são lidos e removidos. Quando algum não existe, o
+    valor correspondente vira lista vazia. A migração é ignorada caso o
+    config.json já exista, preservando edições posteriores.
+    """
+    if Path(config_path).exists():
+        return False
+    base = app_root()
+    legacy = {
+        KEY_CODIGOS_EMITIDOS: ("codigos_emitidos.json", int),
+        KEY_ALUNOS_RASTREADOS: ("alunos_rastreados.json", str),
+        KEY_CODIGOS_SORTEADOS: ("codigos_sorteados.json", int),
+        KEY_ALUNOS_SORTEADOS: ("alunos_sorteados.json", str),
+    }
+    data: dict[str, list] = {}
+    for section, (filename, cast) in legacy.items():
+        path = base / filename
+        values: list = []
+        if path.exists():
+            try:
+                values = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                values = []
+        data[section] = sorted({cast(value) for value in values})
+    Path(config_path).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    for _, (filename, _) in legacy.items():
+        path = base / filename
+        if path.exists():
+            path.unlink()
+    return True
+
+
+def excluded_codes(
+    pares: dict[int, str],
+    drawn_codes: set[int],
+    drawn_students: set[str],
+) -> set[int]:
+    """Códigos a excluir: os sorteados diretamente mais os de alunos sorteados."""
+    excluded = set(drawn_codes)
+    normalized = {normalize_name(name) for name in drawn_students}
+    for code, aluno in pares.items():
+        if normalize_name(aluno) in normalized:
+            excluded.add(code)
+    return excluded

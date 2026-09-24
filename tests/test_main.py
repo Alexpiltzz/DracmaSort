@@ -1,7 +1,17 @@
 import builtins
+import json
 
 from code_gen import main
 from code_gen.core import NotEnoughCodesError
+from code_gen.io import KEY_ALUNOS_RASTREADOS, KEY_CODIGOS_EMITIDOS
+
+
+def _monkeypatch_config(tmp_path, monkeypatch):
+    config = tmp_path / "config.json"
+    monkeypatch.setattr(main, "default_config_path", lambda: config)
+    monkeypatch.setattr(main, "migrate_legacy_config", lambda _path: False)
+    monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
+    return config
 
 
 def test_run_processamento_gera_rows(tmp_path, monkeypatch):
@@ -10,10 +20,7 @@ def test_run_processamento_gera_rows(tmp_path, monkeypatch):
         "Aluno;Nome;E-mail;Quantidade\nMaria Silva;Maria;maria@ex.com;2\n",
         encoding="utf-8-sig",
     )
-
-    monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
-    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
-    monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
+    _monkeypatch_config(tmp_path, monkeypatch)
 
     rows = main._run_processamento(src)
     assert rows is not None
@@ -30,26 +37,25 @@ def test_run_processamento_filtra_alunos_ja_rastreados(tmp_path, monkeypatch):
         "Aluno;Nome;E-mail;Quantidade\nAna Melo;Ana;ana@ex.com;1\nBia Reis;Bia;bia@ex.com;1\n",
         encoding="utf-8-sig",
     )
-
-    monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
-    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
-    monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
-
-    alunos_path = tmp_path / "alunos.json"
-    alunos_path.write_text('["ana melo"]', encoding="utf-8")
+    config = _monkeypatch_config(tmp_path, monkeypatch)
+    config.write_text(
+        json.dumps({KEY_CODIGOS_EMITIDOS: [], KEY_ALUNOS_RASTREADOS: ["ana melo"]}),
+        encoding="utf-8",
+    )
 
     rows = main._run_processamento(src)
     assert rows is not None
     assert len(rows) == 1
     assert rows[0]["Aluno"] == "Bia Reis"
-    assert "ana melo" in alunos_path.read_text(encoding="utf-8")
-    assert "bia reis" in alunos_path.read_text(encoding="utf-8")
+    data = json.loads(config.read_text(encoding="utf-8"))
+    assert "ana melo" in data[KEY_ALUNOS_RASTREADOS]
+    assert "bia reis" in data[KEY_ALUNOS_RASTREADOS]
 
 
 def test_run_processamento_planilha_vazia(tmp_path, monkeypatch):
     src = tmp_path / "vazia.csv"
     src.write_text("Aluno;Nome;E-mail;Quantidade\n", encoding="utf-8-sig")
-    monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
+    _monkeypatch_config(tmp_path, monkeypatch)
     assert main._run_processamento(src) is None
 
 
@@ -65,8 +71,7 @@ def test_run_processamento_sem_codigos(tmp_path, monkeypatch):
         "Aluno;Nome;E-mail;Quantidade\nMaria Silva;Maria;maria@ex.com;1\n",
         encoding="utf-8-sig",
     )
-    monkeypatch.setattr(main, "default_registry_path", lambda: tmp_path / "codigos.json")
-    monkeypatch.setattr(main, "default_student_registry_path", lambda: tmp_path / "alunos.json")
+    _monkeypatch_config(tmp_path, monkeypatch)
 
     class Boom(NotEnoughCodesError):
         pass
