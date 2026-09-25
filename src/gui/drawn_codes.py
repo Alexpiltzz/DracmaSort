@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QCompleter,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -33,7 +34,14 @@ from code_gen.core import (
     format_code,
     smart_title_case,
 )
-from code_gen.io import KEY_ALUNOS_SORTEADOS, KEY_CODIGOS_SORTEADOS, normalize_name
+from code_gen.docx_export import generate_draw_report_docx
+from code_gen.io import (
+    KEY_ALUNOS_SORTEADOS,
+    KEY_CODIGOS_SORTEADOS,
+    latest_unified_report_path,
+    normalize_name,
+    read_unified_pairs,
+)
 
 
 def parse_codes_input(text: str) -> list[int]:
@@ -258,9 +266,90 @@ class DrawnCodesDialog(QDialog):
 
         root.addWidget(tabs)
 
+        export_row = QHBoxLayout()
+        self.export_docx_button = QPushButton("📄 Exportar Ata (.docx)")
+        self.export_docx_button.clicked.connect(self._export_docx_ata)
+        export_row.addWidget(self.export_docx_button)
+        export_row.addStretch()
+
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.close)
-        root.addWidget(buttons)
+        export_row.addWidget(buttons)
+        root.addLayout(export_row)
+
+    def _export_docx_ata(self) -> None:
+        students = self.students()
+        codes = self.codes()
+        if not students and not codes:
+            QMessageBox.information(
+                self, "Nenhum sorteado", "Não há alunos ou códigos registrados para exportar a ata."
+            )
+            return
+
+        unificado = latest_unified_report_path()
+        pares: dict[int, str] = {}
+        if unificado is not None:
+            try:
+                pares = read_unified_pairs(unificado)
+            except Exception:  # noqa: BLE001
+                pares = {}
+
+        records: list[dict[str, str]] = []
+        if students:
+            for name in sorted(students):
+                # encontrar código vinculado se existir
+                matched_codes = [
+                    format_code(c)
+                    for c, aluno in pares.items()
+                    if normalize_name(aluno) == normalize_name(name)
+                ]
+                records.append(
+                    {
+                        "aluno": name,
+                        "email": "-",
+                        "codigo": ", ".join(matched_codes) if matched_codes else "-",
+                    }
+                )
+        else:
+            for code in sorted(codes):
+                aluno = pares.get(code, "-")
+                records.append(
+                    {
+                        "aluno": aluno,
+                        "email": "-",
+                        "codigo": format_code(code),
+                    }
+                )
+
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"Ata_Sorteio_{timestamp}.docx"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar Ata Oficial do Sorteio (.docx)",
+            default_name,
+            "Documentos Word (*.docx)",
+        )
+        if not filename:
+            return
+
+        path = Path(filename)
+        try:
+            generate_draw_report_docx(path, records)
+            QMessageBox.information(
+                self,
+                "Ata gerada com sucesso",
+                (
+                    f"A Ata Oficial do Sorteio foi salva em:\n{path}\n\n"
+                    "Você pode abrir este arquivo no Word para preencher a coluna "
+                    "'Prêmio Recebido'."
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(
+                self, "Falha ao gerar Ata", f"Ocorreu um erro ao gerar o arquivo .docx:\n{exc}"
+            )
 
     def _save(self, section: _SorteadosSection) -> None:
         if section is self._codes_section:
