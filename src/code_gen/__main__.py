@@ -9,6 +9,8 @@ from .core import CodeRegistry, NotEnoughCodesError, StudentRegistry, generate_c
 from .io import (
     KEY_ALUNOS_RASTREADOS,
     KEY_CODIGOS_EMITIDOS,
+    confirmed_sent_codes,
+    confirmed_sent_students,
     default_config_path,
     default_output_path,
     filter_new_students,
@@ -67,17 +69,17 @@ def main(argv: list[str] | None = None) -> int:
     used_codes = registry.load()
     tracked_students = student_registry.load()
 
-    records, skipped = filter_new_students(records, tracked_students)
+    records, skipped = filter_new_students(records, confirmed_sent_students())
     for aluno in skipped:
-        print(f"Aviso: aluno '{aluno}' já rastreado, ignorado.")
+        print(f"Aviso: aluno '{aluno}' já enviado (confirmado no relatório), ignorado.")
     if not records:
-        print("Todos os alunos da planilha já foram rastreados.")
+        print("Todos os alunos da planilha já constam como enviados no relatório unificado.")
         return 1
 
     quantities = [record["quantidade"] for record in records]
 
     try:
-        batches = generate_codes(quantities, used_codes)
+        batches = generate_codes(quantities, confirmed_sent_codes())
     except NotEnoughCodesError as exc:
         print(f"Erro: {exc}")
         return 1

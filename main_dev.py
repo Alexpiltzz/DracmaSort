@@ -7,14 +7,19 @@ Execução:
 from __future__ import annotations
 
 import csv
-import unicodedata
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
 from openpyxl import load_workbook
 
-from code_gen.io import REPORT_FIELDS, is_valid_email, write_report_csv
+from code_gen.io import (
+    REPORT_FIELDS,
+    find_spreadsheet_header,
+    is_valid_email,
+    normalize_header,
+    write_report_csv,
+)
 from code_gen.runtime import app_root
 
 CACHE_DIR = app_root() / "cache"
@@ -131,27 +136,6 @@ def _linha_status(chave: str, qtde: int, total: int) -> None:
     print(f"  {chave:<12}{qtde:>7}{pct:>8.1f}%")
 
 
-def _normalizar_coluna(texto: str) -> str:
-    """Normaliza um cabeçalho para comparação (minúsculas, sem acentos/hífens)."""
-    sem_acentos = "".join(
-        char for char in unicodedata.normalize("NFD", texto) if unicodedata.category(char) != "Mn"
-    )
-    return sem_acentos.strip().lower().replace("-", "").replace(" ", "")
-
-
-def _localizar_cabecalho(linhas: list[list]) -> tuple[int | None, dict[str, int] | None]:
-    """Encontra a linha de cabeçalho com as colunas de interesse e o mapa coluna -> índice."""
-    for pos, linha in enumerate(linhas[:30], start=1):
-        mapa = {
-            _normalizar_coluna(str(celula)): indice
-            for indice, celula in enumerate(linha)
-            if celula is not None
-        }
-        if all(valor in mapa for valor in COLUNAS_ALVO.values()):
-            return pos, mapa
-    return None, None
-
-
 def _ler_linhas_planilha(path: Path) -> list[list]:
     wb = load_workbook(path, read_only=True, data_only=True)
     try:
@@ -168,7 +152,7 @@ def _detectar_planilhas(cache_dir: Path) -> list[Path]:
     detectadas = []
     for arquivo in sorted(cache_dir.glob("*.xlsx")):
         linhas = _ler_linhas_planilha(arquivo)[:30]
-        _, mapa = _localizar_cabecalho(linhas)
+        _, mapa = find_spreadsheet_header(linhas, COLUNAS_ALVO)
         if mapa is not None:
             detectadas.append(arquivo)
     return detectadas
@@ -196,7 +180,7 @@ def _ler_alunos_da_planilha(path: Path) -> tuple[list[dict], list[str]]:
     """Extrai Aluno/Nome/E-mail da planilha base e devolve registros e avisos."""
     linhas = _ler_linhas_planilha(path)
 
-    pos_cabecalho, mapa = _localizar_cabecalho(linhas)
+    pos_cabecalho, mapa = find_spreadsheet_header(linhas, COLUNAS_ALVO)
     if pos_cabecalho is None or mapa is None:
         raise ValueError(f"Cabeçalho não encontrado em {path.name}.")
 
@@ -405,7 +389,7 @@ def comparar_aluno_responsavel(cache_dir: Path = CACHE_DIR) -> None:
         return
 
     def chave(aluno: str, nome: str) -> tuple[str, str]:
-        return _normalizar_coluna(aluno), _normalizar_coluna(nome)
+        return normalize_header(aluno), normalize_header(nome)
 
     pares_unificado: dict[tuple[str, str], tuple[str, str]] = {}
     for linha in linhas_unificado:
@@ -418,7 +402,7 @@ def comparar_aluno_responsavel(cache_dir: Path = CACHE_DIR) -> None:
     for linha in linhas_planilha:
         chave_norm = chave(linha["Aluno"], linha["Nome"])
         pares_planilha.setdefault(chave_norm, (linha["Aluno"], linha["Nome"]))
-        responsaveis_por_aluno.setdefault(_normalizar_coluna(linha["Aluno"]), set()).add(
+        responsaveis_por_aluno.setdefault(normalize_header(linha["Aluno"]), set()).add(
             linha["Nome"]
         )
 
@@ -444,7 +428,7 @@ def comparar_aluno_responsavel(cache_dir: Path = CACHE_DIR) -> None:
 
     status_por_aluno: dict[str, set[str]] = {}
     for linha in linhas_unificado:
-        status_por_aluno.setdefault(_normalizar_coluna(linha["Aluno"]), set()).add(
+        status_por_aluno.setdefault(normalize_header(linha["Aluno"]), set()).add(
             linha.get("Status") or "-"
         )
 
@@ -485,7 +469,7 @@ def comparar_aluno_responsavel(cache_dir: Path = CACHE_DIR) -> None:
     registro_csv.sort(
         key=lambda linha: (
             ORDEM_SITUACAO[linha["Situacao"]],
-            _normalizar_coluna(linha["Aluno"]),
+            normalize_header(linha["Aluno"]),
         )
     )
 

@@ -33,6 +33,26 @@ def normalize_name(value: str) -> str:
     return _normalize(value)
 
 
+def normalize_header(text: str) -> str:
+    """Normaliza um cabeçalho para comparação (minúsculas, sem acentos, hífens ou espaços)."""
+    normalized = unicodedata.normalize("NFD", str(text).strip().lower())
+    sem_acentos = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    return sem_acentos.replace("-", "").replace(" ", "")
+
+
+def find_spreadsheet_header(
+    rows: list[list], target_columns: dict[str, str], max_rows: int = 30
+) -> tuple[int | None, dict[str, int] | None]:
+    """Encontra a linha de cabeçalho que contém todas as colunas de interesse."""
+    for pos, row in enumerate(rows[:max_rows], start=1):
+        mapa = {
+            normalize_header(str(cell)): index for index, cell in enumerate(row) if cell is not None
+        }
+        if all(val in mapa for val in target_columns.values()):
+            return pos, mapa
+    return None, None
+
+
 def _map_columns(headers: list) -> dict[str, int | None]:
     columns: dict[str, int | None] = {
         "aluno": None,
@@ -391,6 +411,40 @@ def read_unified_pairs(path: Path) -> dict[int, str]:
                 if MIN_CODE <= numero <= MAX_CODE and numero not in pares:
                     pares[numero] = aluno
     return pares
+
+
+def confirmed_sent_students(path: Path | None = None) -> set[str]:
+    """Alunos confirmados como enviados (Status=Sucesso) no relatório unificado.
+
+    Lê o relatório unificado mais recente — ou o informado em ``path`` — e
+    devolve os nomes normalizados dos alunos presentes com Status=Sucesso.
+    Sem relatório disponível ou ilegível, devolve conjunto vazio.
+    """
+    unificado = Path(path) if path is not None else latest_unified_report_path()
+    if unificado is None:
+        return set()
+    try:
+        nomes, _ = read_unified_pool(unificado)
+    except (ValueError, OSError):
+        return set()
+    return {normalize_name(nome) for nome in nomes}
+
+
+def confirmed_sent_codes(path: Path | None = None) -> set[int]:
+    """Códigos confirmados como enviados (Status=Sucesso) no relatório unificado.
+
+    Lê o relatório unificado mais recente — ou o informado em ``path`` — e
+    devolve os códigos das linhas com Status=Sucesso. Sem relatório
+    disponível ou ilegível, devolve conjunto vazio.
+    """
+    unificado = Path(path) if path is not None else latest_unified_report_path()
+    if unificado is None:
+        return set()
+    try:
+        _, codigos = read_unified_pool(unificado)
+    except (ValueError, OSError):
+        return set()
+    return codigos
 
 
 def default_config_path() -> Path:

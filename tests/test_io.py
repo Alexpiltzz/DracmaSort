@@ -11,6 +11,8 @@ from code_gen.io import (
     KEY_CODIGOS_SORTEADOS,
     KEY_REPORTS_DIR,
     configured_reports_dir,
+    confirmed_sent_codes,
+    confirmed_sent_students,
     default_config_path,
     default_report_path,
     default_reports_dir,
@@ -332,3 +334,57 @@ def test_set_reports_dir_preserva_secoes(tmp_path, monkeypatch):
     data = json.loads(default_config_path().read_text(encoding="utf-8"))
     assert data["alunos_sorteados"] == ["Ana"]
     assert data[KEY_REPORTS_DIR] == str(tmp_path / "novos")
+
+
+def test_confirmed_sent_students_sem_relatorio(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "latest_unified_report_path", lambda: None)
+
+    assert confirmed_sent_students() == set()
+
+
+def test_confirmed_sent_students_filtra_status(tmp_path, monkeypatch):
+    unificado = tmp_path / "relatorio_envio_unificado_20260925_120000.csv"
+    write_report_csv(
+        unificado,
+        [
+            _linha_report("Ana Melo", "1001"),
+            _linha_report("Bia Reis", "1002", status="Falha ao enviar"),
+        ],
+    )
+    monkeypatch.setattr(io_mod, "latest_unified_report_path", lambda: unificado)
+
+    assert confirmed_sent_students() == {"ana melo"}
+
+
+def test_confirmed_sent_students_path_explicito(tmp_path):
+    unificado = tmp_path / "relatorio_envio_unificado_20260925_120000.csv"
+    write_report_csv(unificado, [_linha_report("Carlos Souza", "1003")])
+
+    assert confirmed_sent_students(unificado) == {"carlos souza"}
+
+
+def test_confirmed_sent_codes_sem_relatorio(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "latest_unified_report_path", lambda: None)
+
+    assert confirmed_sent_codes() == set()
+
+
+def test_confirmed_sent_codes_filtra_status(tmp_path, monkeypatch):
+    unificado = tmp_path / "relatorio_envio_unificado_20260925_120000.csv"
+    write_report_csv(
+        unificado,
+        [
+            _linha_report("Ana Melo", "1001"),
+            _linha_report("Bia Reis", "1002", status="Falha ao enviar"),
+        ],
+    )
+    monkeypatch.setattr(io_mod, "latest_unified_report_path", lambda: unificado)
+
+    assert confirmed_sent_codes() == {1001}
+
+
+def test_confirmed_sent_codes_path_explicito(tmp_path):
+    unificado = tmp_path / "relatorio_envio_unificado_20260925_120000.csv"
+    write_report_csv(unificado, [_linha_report("Carlos Souza", "1003")])
+
+    assert confirmed_sent_codes(unificado) == {1003}

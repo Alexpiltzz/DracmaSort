@@ -11,6 +11,7 @@ def _monkeypatch_config(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "default_config_path", lambda: config)
     monkeypatch.setattr(main, "migrate_legacy_config", lambda _path: False)
     monkeypatch.setattr(main, "default_output_path", lambda _path: tmp_path / "saida.csv")
+    monkeypatch.setattr(main, "confirmed_sent_codes", lambda: set())
     return config
 
 
@@ -42,6 +43,7 @@ def test_run_processamento_filtra_alunos_ja_rastreados(tmp_path, monkeypatch):
         json.dumps({KEY_CODIGOS_EMITIDOS: [], KEY_ALUNOS_RASTREADOS: ["ana melo"]}),
         encoding="utf-8",
     )
+    monkeypatch.setattr(main, "confirmed_sent_students", lambda: {"ana melo"})
 
     rows = main._run_processamento(src)
     assert rows is not None
@@ -50,6 +52,81 @@ def test_run_processamento_filtra_alunos_ja_rastreados(tmp_path, monkeypatch):
     data = json.loads(config.read_text(encoding="utf-8"))
     assert "ana melo" in data[KEY_ALUNOS_RASTREADOS]
     assert "bia reis" in data[KEY_ALUNOS_RASTREADOS]
+
+
+def test_run_processamento_reprocessa_sem_confirmacao_no_relatorio(tmp_path, monkeypatch):
+    src = tmp_path / "entrada.csv"
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nAna Melo;Ana;ana@ex.com;1\n",
+        encoding="utf-8-sig",
+    )
+    config = _monkeypatch_config(tmp_path, monkeypatch)
+    config.write_text(
+        json.dumps({KEY_CODIGOS_EMITIDOS: [], KEY_ALUNOS_RASTREADOS: ["ana melo"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "confirmed_sent_students", lambda: set())
+
+    rows = main._run_processamento(src)
+    assert rows is not None
+    assert len(rows) == 1
+    assert rows[0]["Aluno"] == "Ana Melo"
+
+
+def test_run_processamento_reutiliza_codigo_emitido_nao_enviado(tmp_path, monkeypatch):
+    src = tmp_path / "entrada.csv"
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nAna Melo;Ana;ana@ex.com;1\n",
+        encoding="utf-8-sig",
+    )
+    config = _monkeypatch_config(tmp_path, monkeypatch)
+    config.write_text(
+        json.dumps({KEY_CODIGOS_EMITIDOS: [7], KEY_ALUNOS_RASTREADOS: ["ana melo"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "confirmed_sent_students", lambda: set())
+    monkeypatch.setattr(main, "confirmed_sent_codes", lambda: set())
+
+    recebidos = []
+    monkeypatch.setattr(
+        main,
+        "generate_codes",
+        lambda quantities, used_codes, rng=None: recebidos.append(used_codes) or [["0007"]],
+    )
+
+    rows = main._run_processamento(src)
+    assert rows is not None
+    assert len(rows) == 1
+    assert rows[0]["Códigos"] == "0007"
+    assert recebidos == [set()]
+
+
+def test_run_processamento_bloqueia_codigo_confirmado(tmp_path, monkeypatch):
+    src = tmp_path / "entrada.csv"
+    src.write_text(
+        "Aluno;Nome;E-mail;Quantidade\nAna Melo;Ana;ana@ex.com;1\n",
+        encoding="utf-8-sig",
+    )
+    config = _monkeypatch_config(tmp_path, monkeypatch)
+    config.write_text(
+        json.dumps({KEY_CODIGOS_EMITIDOS: [7], KEY_ALUNOS_RASTREADOS: ["ana melo"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "confirmed_sent_students", lambda: set())
+    monkeypatch.setattr(main, "confirmed_sent_codes", lambda: {7})
+
+    recebidos = []
+    monkeypatch.setattr(
+        main,
+        "generate_codes",
+        lambda quantities, used_codes, rng=None: recebidos.append(used_codes) or [["0013"]],
+    )
+
+    rows = main._run_processamento(src)
+    assert rows is not None
+    assert len(rows) == 1
+    assert rows[0]["Códigos"] == "0013"
+    assert recebidos == [{7}]
 
 
 def test_run_processamento_planilha_vazia(tmp_path, monkeypatch):
