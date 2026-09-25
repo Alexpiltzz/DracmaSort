@@ -28,28 +28,23 @@ from code_gen.core import (
     NotEnoughCodesError,
     StudentRegistry,
     draw_item,
-    format_code,
     generate_codes,
     pool_size,
-    smart_title_case,
 )
 from code_gen.io import (
     KEY_ALUNOS_RASTREADOS,
-    KEY_ALUNOS_SORTEADOS,
     KEY_CODIGOS_EMITIDOS,
-    KEY_CODIGOS_SORTEADOS,
     configured_reports_dir,
+    confirmed_sent_codes,
+    confirmed_sent_students,
     default_config_path,
     default_output_path,
     default_report_path,
-    excluded_codes,
     filter_new_students,
     is_valid_email,
     latest_unified_report_path,
     migrate_legacy_config,
     normalize_name,
-    read_spreadsheet,
-    read_unified_pairs,
     read_unified_pool,
     set_reports_dir,
     unify_reports,
@@ -58,14 +53,23 @@ from code_gen.io import (
 )
 from code_gen.runtime import app_root
 from delivery.sender import send_all
-from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdown_to_html
+from delivery.smtp import (
+    SmtpConfig,
+    build_custom_message,
+    enviar_email,
+    get_secure_password,
+    save_secure_password,
+)
 from updater.updater import UpdateWorker
 
 from .animations import ConfettiWidget, SorteioRevealAnimator
-from .drawn_codes import DrawnCodesDialog, register_drawn_numbers, register_drawn_students
+from .drawn_codes import DrawnCodesDialog
 from .resources import asset_path, load_qss
 from .sorteio_config import SorteioConfigDialog
 from .streaming import StreamingWindow
+from .tabs.email_template_tab import EmailTemplateTabHandler
+from .tabs.operation_tab import OperationTabHandler
+from .tabs.sorteio_tab import SorteioTabHandler
 
 DEFAULT_SUBJECT = "Confira seus números para o sorteio"
 DEFAULT_MESSAGE = """Olá, **{nome}**!
@@ -201,6 +205,16 @@ class MainWindow(QMainWindow):
         self._sorteio_font_family = "Segoe UI"
         self._sorteio_font_size = 34
 
+        self.operation_handler = OperationTabHandler(self)
+        self.email_template_handler = EmailTemplateTabHandler(self)
+        self.sorteio_handler = SorteioTabHandler(self)
+
+        self.operation_handler.status_changed.connect(self._set_status)
+        self.operation_handler.log_message.connect(self._log)
+        self.email_template_handler.status_changed.connect(self._set_status)
+        self.sorteio_handler.status_changed.connect(self._set_status)
+        self.sorteio_handler.log_message.connect(self._log)
+
         self._build_ui()
         self._load_smtp_config()
         self._load_message_template()
@@ -252,6 +266,7 @@ class MainWindow(QMainWindow):
         self.host_input.textChanged.connect(self._save_smtp_config)
         self.port_input.valueChanged.connect(self._save_smtp_config)
         self.login_input.textChanged.connect(self._save_smtp_config)
+        self.password_input.textChanged.connect(self._save_smtp_config)
         self.from_input.textChanged.connect(self._save_smtp_config)
         self.sorteio_draw_button.clicked.connect(self._do_sorteio)
         self.config_button.clicked.connect(self._toggle_configurator)
@@ -259,42 +274,19 @@ class MainWindow(QMainWindow):
         self.stream_button.clicked.connect(self._toggle_streaming)
 
     def _reset_message_template(self) -> None:
-        self.subject_input.setText(DEFAULT_SUBJECT)
-        self.message_input.setPlainText(DEFAULT_MESSAGE)
-        self._save_message_template()
-        self._set_status("Modelo original da mensagem restaurado.")
+        self.email_template_handler.reset_template()
 
     def _app_settings(self) -> QSettings:
         return QSettings("Colégio Adventista de Blumenau", "Central de Sorteios")
 
     def _save_message_template(self) -> None:
-        if not hasattr(self, "subject_input") or not hasattr(self, "message_input"):
-            return
-        settings = self._app_settings()
-        settings.setValue("email/subject", self.subject_input.text())
-        settings.setValue("email/body", self.message_input.toPlainText())
-        settings.sync()
+        self.email_template_handler.save_template()
 
     def _load_message_template(self) -> None:
-        settings = self._app_settings()
-        subject = settings.value("email/subject", DEFAULT_SUBJECT)
-        body = settings.value("email/body", DEFAULT_MESSAGE)
-        self.subject_input.setText(str(subject))
-        self.message_input.setPlainText(str(body))
-        self._update_message_preview()
+        self.email_template_handler.load_template()
 
     def _update_message_preview(self) -> None:
-        if not hasattr(self, "message_preview"):
-            return
-        preview_body = self.message_input.toPlainText()
-        preview_body = preview_body.replace("{nome}", "Maria Souza")
-        preview_body = preview_body.replace("{codigos}", "1234, 5678")
-        preview_body = preview_body.replace("{remetente}", "escola@example.com")
-        preview_body = preview_body.replace("{destinatario}", "maria@example.com")
-        html = markdown_to_html(preview_body)
-        self.message_preview.setHtml(
-            f'<div style="font-family: Segoe UI; color: #27312b; padding: 14px;">{html}</div>'
-        )
+        self.email_template_handler.update_preview()
 
     def _apply_style(self) -> None:
         qss = load_qss(self.dark_mode)
@@ -356,6 +348,9 @@ class MainWindow(QMainWindow):
         settings.setValue("smtp/port", self.port_input.value())
         settings.setValue("smtp/login", self.login_input.text())
         settings.setValue("smtp/from", self.from_input.text())
+        pwd = self.password_input.text() if hasattr(self, "password_input") else ""
+        if pwd and self.login_input.text():
+            save_secure_password(self.login_input.text(), pwd)
         settings.sync()
 
     def _load_smtp_config(self) -> None:
@@ -368,7 +363,8 @@ class MainWindow(QMainWindow):
         self.host_input.setText(str(host))
         self.port_input.setValue(int(port))
         self.login_input.setText(str(login))
-        self.password_input.setText(config.password)
+        pwd = config.password or get_secure_password(str(login))
+        self.password_input.setText(pwd)
         self.from_input.setText(str(from_addr))
         self.test_to_input.setText(config.to_addr)
 
@@ -385,58 +381,13 @@ class MainWindow(QMainWindow):
         self.mode_badge.style().polish(self.mode_badge)
 
     def _source_pool(self) -> list[str]:
-        """Devolve a lista de itens (nomes ou códigos) da fonte selecionada.
-
-        A base unificada é o relatório unificado mais recente de cache/; a
-        origem dos dados passa a ser o CSV em vez de config.json.
-        """
-        unificado = latest_unified_report_path()
-        if unificado is None:
-            raise OSError(
-                "Nenhum relatório unificado (relatorio_envio_unificado_*.csv) "
-                "encontrado em cache/ ou na pasta base."
-            )
-        try:
-            nomes, codigos = read_unified_pool(unificado)
-        except (ValueError, OSError) as exc:
-            raise OSError(
-                f"Não foi possível ler o relatório unificado {unificado.name}: {exc}"
-            ) from exc
-        drawn = self._drawn_codes()
-        drawn_students = self._drawn_students()
-        drawn_name = {normalize_name(name) for name in drawn_students}
-        if self._sorteio_source_index == 0:
-            return sorted(
-                smart_title_case(name) for name in nomes if normalize_name(name) not in drawn_name
-            )
-        try:
-            pares = read_unified_pairs(unificado)
-        except (ValueError, OSError) as exc:
-            raise OSError(
-                f"Não foi possível ler o relatório unificado {unificado.name}: {exc}"
-            ) from exc
-        excluded = excluded_codes(pares, drawn, drawn_students)
-        if self._sorteio_source_index == 1:
-            return [format_code(code) for code in sorted(codigos - excluded)]
-        return [
-            f"{format_code(code)}\n{smart_title_case(aluno)}"
-            for code, aluno in sorted(pares.items())
-            if code not in excluded and normalize_name(aluno) not in drawn_name
-        ]
+        return self.sorteio_handler.source_pool()
 
     def _drawn_codes(self) -> set[int]:
-        """Conjunto de códigos já sorteados, seção codigos_sorteados do config."""
-        try:
-            return CodeRegistry(default_config_path(), section=KEY_CODIGOS_SORTEADOS).load()
-        except (ValueError, OSError) as exc:
-            raise OSError(f"Não foi possível ler codigos_sorteados: {exc}") from exc
+        return self.sorteio_handler.drawn_codes()
 
     def _drawn_students(self) -> set[str]:
-        """Conjunto de alunos já sorteados, seção alunos_sorteados do config."""
-        try:
-            return StudentRegistry(default_config_path(), section=KEY_ALUNOS_SORTEADOS).load()
-        except (ValueError, OSError) as exc:
-            raise OSError(f"Não foi possível ler alunos_sorteados: {exc}") from exc
+        return self.sorteio_handler.drawn_students()
 
     def _open_drawn_codes(self) -> None:
         known_students: set[str] = set()
@@ -594,55 +545,10 @@ class MainWindow(QMainWindow):
         self._celebrate_streaming()
 
     def _register_drawn_codes(self, winners: list[str]) -> None:
-        """Registra códigos e alunos sorteados para excluí-los dos próximos sorteios.
-
-        No modo "Código + Aluno" cada winner traz o código na primeira linha e o
-        nome do aluno na segunda; no modo "Códigos" só vem o código, então o
-        aluno é recuperado pelo vínculo código->aluno do relatório unificado.
-        """
-        unificado = latest_unified_report_path()
-        pares: dict[int, str] = {}
-        if unificado is not None:
-            try:
-                pares = read_unified_pairs(unificado)
-            except (ValueError, OSError) as exc:
-                self._log(f"Não foi possível ler o relatório unificado: {exc}")
-
-        numeros: list[int] = []
-        alunos: list[str] = []
-        for winner in winners:
-            linha = winner.split("\n", 1)
-            codigo = linha[0]
-            try:
-                numero = int(codigo)
-            except ValueError:
-                continue
-            numeros.append(numero)
-            nome = linha[1].strip() if len(linha) > 1 else pares.get(numero)
-            if nome:
-                alunos.append(nome)
-        if numeros:
-            try:
-                register_drawn_numbers(
-                    default_config_path(), numeros, section=KEY_CODIGOS_SORTEADOS
-                )
-            except (ValueError, OSError) as exc:
-                self._log(f"Não foi possível registrar os códigos sorteados: {exc}")
-        if alunos:
-            try:
-                register_drawn_students(default_config_path(), alunos, section=KEY_ALUNOS_SORTEADOS)
-            except (ValueError, OSError) as exc:
-                self._log(f"Não foi possível registrar os alunos sorteados: {exc}")
+        self.sorteio_handler.register_drawn_codes(winners)
 
     def _register_plain_students(self, winners: list[str]) -> None:
-        """Registra alunos sorteados na fonte de nomes (index 0) para exclusão."""
-        nomes = [name for name in winners if name.strip()]
-        if not nomes:
-            return
-        try:
-            register_drawn_students(default_config_path(), nomes, section=KEY_ALUNOS_SORTEADOS)
-        except (ValueError, OSError) as exc:
-            self._log(f"Não foi possível registrar os alunos sorteados: {exc}")
+        self.sorteio_handler.register_plain_students(winners)
 
     def _spawn_confetti(self) -> None:
         confetti = ConfettiWidget(self.sorteio_result_frame)
@@ -686,57 +592,7 @@ class MainWindow(QMainWindow):
         self._streaming_window.set_codes_mode(self._show_codes_font())
 
     def _import_spreadsheet(self) -> None:
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Selecione a planilha de participantes",
-            str(self.input_path.parent if self.input_path else Path.cwd()),
-            "Planilhas (*.xlsx *.csv)",
-        )
-        if not filename:
-            return
-        path = Path(filename)
-        try:
-            records, warnings = read_spreadsheet(path)
-        except ValueError as exc:
-            QMessageBox.critical(self, "Não foi possível importar", str(exc))
-            return
-
-        self.input_path = path
-        self.input_records = records
-        self.output_rows = []
-        self.output_path = None
-        self.report_path = None
-        self._populate_input_table(records)
-        self._clear_output()
-        self.activity_log.clear()
-        for warning in warnings:
-            self._log(f"Aviso: {warning}")
-        if not warnings:
-            self._log("Planilha validada sem avisos.")
-        try:
-            tracked = StudentRegistry(default_config_path(), section=KEY_ALUNOS_RASTREADOS).load()
-            _, already_tracked = filter_new_students(records, tracked)
-            if already_tracked:
-                self._log(
-                    f"{len(already_tracked)} aluno(s) já rastreado(s), ignorado(s) na geração."
-                )
-        except (ValueError, OSError) as exc:
-            self._log(f"Não foi possível consultar o registro de alunos: {exc}")
-        self.generate_button.setEnabled(bool(records))
-        self.export_button.setEnabled(False)
-        self.open_folder_button.setEnabled(False)
-        self.send_button.setEnabled(False)
-        self.participants_metric_value.setText(str(len(records)))
-        self.codes_metric_value.setText("0")
-        try:
-            available = pool_size(
-                CodeRegistry(default_config_path(), section=KEY_CODIGOS_EMITIDOS).load()
-            )
-            self.available_metric_value.setText(f"{available:,}".replace(",", "."))
-        except Exception as exc:  # noqa: BLE001 - o usuario ainda pode corrigir o registro depois
-            self.available_metric_value.setText("?")
-            self._log(f"Não foi possível consultar o registro de códigos: {exc}")
-        self._set_status(f"{len(records)} participante(s) importado(s).")
+        self.operation_handler.import_spreadsheet()
 
     def _populate_input_table(self, records: list[dict[str, str | int]]) -> None:
         self.input_table.setRowCount(len(records))
@@ -762,14 +618,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Não foi possível carregar os registros", str(exc))
             return
 
-        fresh_records, skipped = filter_new_students(self.input_records, tracked_students)
+        sent_students = confirmed_sent_students()
+        fresh_records, skipped = filter_new_students(self.input_records, sent_students)
         for aluno in skipped:
-            self._log(f"Aluno '{aluno}' já rastreado, ignorado na geração.")
+            self._log(f"Aluno '{aluno}' já enviado (confirmado no relatório), ignorado na geração.")
         if skipped:
-            self._set_status(f"{len(skipped)} aluno(s) já rastreado(s) ignorado(s).")
+            self._set_status(f"{len(skipped)} aluno(s) já enviado(s) ignorado(s).")
         if not fresh_records:
             QMessageBox.information(
-                self, "Nenhum aluno novo", "Todos os alunos da planilha já foram rastreados."
+                self,
+                "Nenhum aluno novo",
+                "Todos os alunos da planilha já constam como enviados no relatório unificado.",
             )
             return
 
@@ -778,7 +637,7 @@ class MainWindow(QMainWindow):
                 record for record in fresh_records if bool(record.get("email_valido", True))
             ]
             quantities = [int(record["quantidade"]) for record in valid_records]
-            batches = generate_codes(quantities, used_codes) if valid_records else []
+            batches = generate_codes(quantities, confirmed_sent_codes()) if valid_records else []
         except (NotEnoughCodesError, ValueError, OSError) as exc:
             QMessageBox.critical(self, "Não foi possível gerar os códigos", str(exc))
             return
