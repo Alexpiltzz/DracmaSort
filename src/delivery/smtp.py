@@ -71,11 +71,15 @@ class SmtpConfig:
     @classmethod
     def from_env(cls) -> "SmtpConfig":
         """Constrói a configuração a partir do ambiente (após carregar o ``.env``)."""
+        login = os.environ.get(f"{_PREFIX}LOGIN", _DEFAULT_LOGIN)
+        password = os.environ.get(f"{_PREFIX}PASS", "")
+        if not password and login:
+            password = get_secure_password(login)
         return cls(
             host=os.environ.get(f"{_PREFIX}HOST", _DEFAULT_HOST),
             port=int(os.environ.get(f"{_PREFIX}PORT", str(_DEFAULT_PORT))),
-            login=os.environ.get(f"{_PREFIX}LOGIN", _DEFAULT_LOGIN),
-            password=os.environ.get(f"{_PREFIX}PASS", ""),
+            login=login,
+            password=password,
             from_addr=os.environ.get(f"{_PREFIX}FROM", _DEFAULT_FROM),
             to_addr=os.environ.get(f"{_PREFIX}TO", _DEFAULT_TO),
         )
@@ -227,6 +231,35 @@ def enviar_email(config: SmtpConfig, msg: MIMEMultipart) -> dict:
         return servidor.send_message(msg)
     finally:
         servidor.quit()
+
+
+KEYRING_SERVICE_NAME = "Giveaways_Tools"
+
+
+def save_secure_password(login: str, password: str) -> bool:
+    """Salva a senha SMTP de forma segura usando o keyring do sistema operacional."""
+    if not login or not password:
+        return False
+    try:
+        import keyring
+
+        keyring.set_password(KEYRING_SERVICE_NAME, login, password)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def get_secure_password(login: str) -> str:
+    """Recupera a senha SMTP armazenada no keyring do sistema operacional."""
+    if not login:
+        return ""
+    try:
+        import keyring
+
+        password = keyring.get_password(KEYRING_SERVICE_NAME, login)
+        return password or ""
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 load_env_file(prefix=_PREFIX)
