@@ -37,6 +37,7 @@ from .io import (
     migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
+    unify_reports,
     write_output_csv,
     write_report_csv,
 )
@@ -233,6 +234,12 @@ def _run_envio(rows: list[dict], test_mode: bool, input_path: Path | None = None
         report_path = default_report_path(input_path)
         write_report_csv(report_path, result.reports)
         print(f"\nRelatório de envio salvo em: {report_path}")
+        try:
+            unificado = unify_reports(report_path.parent)
+            if unificado is not None:
+                print(f"Relatório unificado atualizado: {unificado.name}")
+        except (OSError, ValueError) as exc:
+            print(f"Não foi possível atualizar o relatório unificado: {exc}")
 
     if result.failures:
         print(f"\nConcluído com {result.failures} falha(s).")

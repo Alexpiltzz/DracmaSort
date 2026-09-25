@@ -13,12 +13,14 @@ from .runtime import app_root
 
 OUTPUT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos"]
 REPORT_FIELDS = ["Aluno", "Nome", "E-mail", "Códigos", "Status", "Data_Hora", "Detalhes"]
+REPORT_PATTERN = "relatorio_envio_*.csv"
 UNIFIED_REPORT_PATTERN = "relatorio_envio_unificado_*.csv"
 
 KEY_CODIGOS_EMITIDOS = "codigos_emitidos"
 KEY_ALUNOS_RASTREADOS = "alunos_rastreados"
 KEY_CODIGOS_SORTEADOS = "codigos_sorteados"
 KEY_ALUNOS_SORTEADOS = "alunos_sorteados"
+KEY_REPORTS_DIR = "reports_dir"
 
 
 def _normalize(value: str) -> str:
@@ -193,23 +195,145 @@ def write_report_csv(path: Path, rows: list[dict]) -> None:
 
 def default_report_path(input_path: Path) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return Path(input_path).parent / f"relatorio_envio_{timestamp}.csv"
+    return default_reports_dir() / f"relatorio_envio_{timestamp}.csv"
+
+
+def default_reports_dir() -> Path:
+    """Pasta configurada para relatórios ou o primeiro fallback existente.
+
+    Lê a chave ``reports_dir`` do ``config.json`` da raiz. Quando ela existe
+    e aponta para uma pasta válida, devolve esse caminho. Caso contrário,
+    devolve a primeira pasta existente entre ``cache/``, ``enviados/`` e a
+    raiz do aplicativo (nesta ordem), o que nem sempre precisa existir.
+    """
+    configurada = configured_reports_dir()
+    if configurada is not None:
+        return configurada
+    raiz = app_root()
+    for candidato in (raiz / "cache", raiz / "enviados", raiz):
+        if candidato.exists():
+            return candidato
+    return raiz
+
+
+def configured_reports_dir() -> Path | None:
+    """Devolve a pasta de relatórios salva no ``config.json``, se existir."""
+    config = default_config_path()
+    if not config.exists():
+        return None
+    try:
+        data = json.loads(config.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    valor = data.get(KEY_REPORTS_DIR)
+    if isinstance(valor, str) and valor and Path(valor).exists():
+        return Path(valor)
+    return None
+
+
+def set_reports_dir(path: Path | str) -> Path:
+    """Cria a pasta de relatórios e a persiste no ``config.json``.
+
+    Devolve o caminho normalizado. Mantém as demais seções do config.json.
+    """
+    destino = Path(path)
+    destino.mkdir(parents=True, exist_ok=True)
+    config = default_config_path()
+    data: dict = {}
+    if config.exists():
+        try:
+            data = json.loads(config.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data[KEY_REPORTS_DIR] = str(destino)
+    config.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return destino
 
 
 def latest_unified_report_path(base_dir: Path | None = None) -> Path | None:
-    """Devolve o relatório unificado mais recente (cache/ e pasta base).
+    """Devolve o relatório unificado mais recente nas pastas de relatório.
 
-    Procura por ``relatorio_envio_unificado_*.csv`` tanto em ``cache/`` quanto
-    na pasta raiz do aplicativo e devolve o mais recente, ou ``None``.
+    Com ``base_dir`` informado, procura por ``cache/`` e pela pasta base,
+    devolvendo o mais recente entre as duas. No padrão, procura primeiro na
+    pasta de relatórios configurada e, se ela estiver vazia, nas pastas
+    ``cache/``, ``enviados/`` e raiz do aplicativo — sempre o mais recente.
+    Devolve ``None`` se não houver nenhum.
     """
-    raiz = Path(base_dir) if base_dir else app_root()
-    candidatos: list[Path] = []
-    for diretorio in (raiz / "cache", raiz):
+    if base_dir is not None:
+        raiz = Path(base_dir)
+        diretorios: list[Path] = [raiz / "cache", raiz]
+        candidatos = _unified_candidates(diretorios)
+        candidatos.sort(key=lambda arquivo: arquivo.stat().st_mtime, reverse=True)
+        return candidatos[0] if candidatos else None
+    raiz = app_root()
+    configurada = configured_reports_dir()
+    alvos = [configurada] if configurada else []
+    alvos += [raiz / "cache", raiz / "enviados", raiz]
+    for diretorio in alvos:
         if not diretorio.exists():
             continue
+        candidatos = _unified_candidates([diretorio])
+        if candidatos:
+            candidatos.sort(key=lambda arquivo: arquivo.stat().st_mtime, reverse=True)
+            return candidatos[0]
+    return None
+
+
+def _unified_candidates(diretorios: list[Path]) -> list[Path]:
+    candidatos: list[Path] = []
+    vistos: set[Path] = set()
+    for diretorio in diretorios:
+        if not diretorio.exists() or diretorio in vistos:
+            continue
+        vistos.add(diretorio)
         candidatos.extend(diretorio.glob(UNIFIED_REPORT_PATTERN))
-    candidatos.sort(key=lambda arquivo: arquivo.stat().st_mtime, reverse=True)
-    return candidatos[0] if candidatos else None
+    return candidatos
+
+
+def unify_reports(report_dir: Path | None = None) -> Path | None:
+    """Unifica todos os relatórios de envio em um ``relatorio_envio_unificado_*.csv``.
+
+    Percorre os ``relatorio_envio_*.csv`` do diretório informado (padrão
+    a pasta de relatórios configurada), sem incluir os já unificados, e grava
+    o novo unificado com a soma de todas as linhas. Devolve o caminho gerado
+    ou ``None`` se não houver relatórios com registros válidos.
+    """
+    diretorio = Path(report_dir) if report_dir else default_reports_dir()
+    if not diretorio.exists():
+        return None
+    arquivos = sorted(
+        arquivo
+        for arquivo in diretorio.glob(REPORT_PATTERN)
+        if not arquivo.name.startswith("relatorio_envio_unificado_")
+    )
+    linhas: list[dict] = []
+    for arquivo in arquivos:
+        try:
+            linhas.extend(_read_report_rows(arquivo))
+        except (OSError, ValueError):
+            continue
+    if not linhas:
+        return None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    saida = diretorio / f"relatorio_envio_unificado_{timestamp}.csv"
+    write_report_csv(saida, linhas)
+    return saida
+
+
+def _read_report_rows(path: Path) -> list[dict]:
+    """Lê as linhas não vazias de um relatório de envio (utf-8-sig, ';')."""
+    linhas: list[dict] = []
+    with path.open("r", encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter=";")
+        for linha in reader:
+            valores = [(linha.get(campo) or "").strip() for campo in REPORT_FIELDS]
+            if any(valores):
+                linhas.append(dict(zip(REPORT_FIELDS, valores)))
+    return linhas
 
 
 def read_unified_pool(path: Path) -> tuple[set[str], set[int]]:

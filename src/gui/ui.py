@@ -38,6 +38,7 @@ from code_gen.io import (
     KEY_ALUNOS_SORTEADOS,
     KEY_CODIGOS_EMITIDOS,
     KEY_CODIGOS_SORTEADOS,
+    configured_reports_dir,
     default_config_path,
     default_output_path,
     default_report_path,
@@ -50,9 +51,12 @@ from code_gen.io import (
     read_spreadsheet,
     read_unified_pairs,
     read_unified_pool,
+    set_reports_dir,
+    unify_reports,
     write_output_csv,
     write_report_csv,
 )
+from code_gen.runtime import app_root
 from delivery.sender import send_all
 from delivery.smtp import SmtpConfig, build_custom_message, enviar_email, markdown_to_html
 from updater.updater import UpdateWorker
@@ -995,6 +999,12 @@ class MainWindow(QMainWindow):
                 self._log(f"Relatório salvo em: {self.report_path}")
             except OSError as exc:
                 self._log(f"Não foi possível salvar o relatório: {exc}")
+            try:
+                unificado = unify_reports(self.report_path.parent)
+                if unificado is not None:
+                    self._log(f"Relatório unificado atualizado: {unificado.name}")
+            except (OSError, ValueError) as exc:
+                self._log(f"Não foi possível atualizar o relatório unificado: {exc}")
         self._set_status(summary)
         icon = QMessageBox.Icon.Information if completed else QMessageBox.Icon.Warning
         dialog = QMessageBox(self)
@@ -1129,6 +1139,14 @@ def main() -> int:
         print("Dados migrados para config.json")
     app = QApplication(sys.argv)
     app.setApplicationName("Central de Sorteios")
+    if configured_reports_dir() is None:
+        pasta = QFileDialog.getExistingDirectory(
+            None,
+            "Pasta de relatórios de envio",
+            str(app_root()),
+        )
+        if pasta:
+            set_reports_dir(pasta)
     window = MainWindow()
     window.show()
     return app.exec()

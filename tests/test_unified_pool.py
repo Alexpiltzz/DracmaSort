@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from code_gen.io import (
+    KEY_REPORTS_DIR,
     default_config_path,
     excluded_codes,
     latest_unified_report_path,
@@ -48,6 +49,26 @@ def test_latest_unified_report_path_padrao_usa_cache(tmp_path, monkeypatch):
     assert (
         latest_unified_report_path() == tmp_path / "relatorio_envio_unificado_20260101_000000.csv"
     )
+
+
+def test_latest_unified_report_path_padrao_usa_configurada(tmp_path, monkeypatch):
+    import json
+
+    from code_gen import io as io_mod
+
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    configurada = tmp_path / "relatorios"
+    configurada.mkdir()
+    default_config_path().write_text(
+        json.dumps({KEY_REPORTS_DIR: str(configurada)}),
+        encoding="utf-8",
+    )
+    _csv(configurada, "relatorio_envio_unificado_20260101_000000.csv", "Aluno;Status\n")
+    _csv(tmp_path, "relatorio_envio_unificado_20261231_235959.csv", "Aluno;Status\n", mtime=2000)
+
+    mais_recente = latest_unified_report_path()
+    assert mais_recente is not None
+    assert mais_recente == configurada / "relatorio_envio_unificado_20260101_000000.csv"
 
 
 def test_latest_unified_report_path_encontra_na_pasta_base(tmp_path):

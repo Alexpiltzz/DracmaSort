@@ -9,12 +9,17 @@ from code_gen.io import (
     KEY_ALUNOS_SORTEADOS,
     KEY_CODIGOS_EMITIDOS,
     KEY_CODIGOS_SORTEADOS,
+    KEY_REPORTS_DIR,
+    configured_reports_dir,
     default_config_path,
     default_report_path,
+    default_reports_dir,
     filter_new_students,
     migrate_legacy_config,
     normalize_name,
     read_spreadsheet,
+    set_reports_dir,
+    unify_reports,
     write_output_csv,
     write_report_csv,
 )
@@ -183,7 +188,8 @@ def test_migrate_legacy_config_preserva_acentos(tmp_path, monkeypatch):
     assert "\\u00ed" not in text
 
 
-def test_write_report_csv_e_path(tmp_path):
+def test_write_report_csv_e_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "default_reports_dir", lambda: tmp_path)
     input_file = tmp_path / "participantes.csv"
     rep_path = default_report_path(input_file)
     assert rep_path.name.startswith("relatorio_envio_")
@@ -203,4 +209,126 @@ def test_write_report_csv_e_path(tmp_path):
     write_report_csv(rep_path, rows)
     text = rep_path.read_text(encoding="utf-8-sig")
     assert "Aluno;Nome;E-mail;Códigos;Status;Data_Hora;Detalhes" in text
-    assert "Maria Silva" in text
+
+
+def _linha_report(aluno: str, codigo: str, status: str = "Sucesso") -> dict:
+    return {
+        "Aluno": aluno,
+        "Nome": aluno.split()[0],
+        "E-mail": f"{aluno.split()[0].lower()}@ex.com",
+        "Códigos": codigo,
+        "Status": status,
+        "Data_Hora": "2026-08-28 10:00:00",
+        "Detalhes": "ok",
+    }
+
+
+def test_unify_reports_junta_todos_os_relatorios(tmp_path):
+    (tmp_path / "relatorio_envio_20260831_100000.csv").write_text("", encoding="utf-8")
+    for idx in (1, 2):
+        rep = tmp_path / f"relatorio_envio_2026090{idx}_100000.csv"
+        write_report_csv(rep, [_linha_report(f"Aluno {idx}", f"000{idx}")])
+
+    saida = unify_reports(tmp_path)
+    assert saida is not None
+    assert saida.name.startswith("relatorio_envio_unificado_")
+    text = saida.read_text(encoding="utf-8-sig")
+    assert "Aluno 1" in text
+    assert "Aluno 2" in text
+
+
+def test_unify_reports_sem_relatorios_devolve_none(tmp_path):
+    assert unify_reports(tmp_path) is None
+
+
+def test_unify_reports_ignora_unificado_anterior(tmp_path):
+    anterior = tmp_path / "relatorio_envio_unificado_20260924_110218.csv"
+    write_report_csv(anterior, [_linha_report("Repetido", "0999")])
+    write_report_csv(
+        tmp_path / "relatorio_envio_20260901_100000.csv",
+        [_linha_report("Novo", "1001")],
+    )
+
+    saida = unify_reports(tmp_path)
+    assert saida is not None
+    text = saida.read_text(encoding="utf-8-sig")
+    assert "Novo" in text
+    assert "Repetido" not in text
+
+
+def test_unify_reports_padrao_usa_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    write_report_csv(
+        cache / "relatorio_envio_20260901_100000.csv", [_linha_report("Maria", "0007")]
+    )
+
+    saida = unify_reports()
+    assert saida is not None
+    assert saida.parent == cache
+    assert "Maria;Maria" in saida.read_text(encoding="utf-8-sig")
+
+
+def _config_reports_dir(tmp_path, monkeypatch, valor):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    config = default_config_path()
+    config.write_text(
+        json.dumps({"codigos_emitidos": [], KEY_REPORTS_DIR: valor}),
+        encoding="utf-8",
+    )
+
+
+def test_default_reports_dir_usa_configurada(tmp_path, monkeypatch):
+    pasta = tmp_path / "pasta_relatorios"
+    pasta.mkdir()
+    _config_reports_dir(tmp_path, monkeypatch, str(pasta))
+
+    assert default_reports_dir() == pasta
+    assert configured_reports_dir() == pasta
+
+
+def test_default_reports_dir_ignora_configurada_invalida(tmp_path, monkeypatch):
+    _config_reports_dir(tmp_path, monkeypatch, str(tmp_path / "inexistente"))
+
+    assert configured_reports_dir() is None
+    assert default_reports_dir() == tmp_path
+
+
+def test_default_reports_dir_fallback_ordem(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    enviados = tmp_path / "enviados"
+    enviados.mkdir()
+
+    assert default_reports_dir() == enviados
+
+
+def test_default_reports_dir_fallback_raiz(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+
+    assert default_reports_dir() == tmp_path
+
+
+def test_set_reports_dir_persiste_e_cria(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    pasta = tmp_path / "relatorios" / "novos"
+    set_reports_dir(pasta)
+
+    assert pasta.exists()
+    assert configured_reports_dir() == pasta
+    data = json.loads(default_config_path().read_text(encoding="utf-8"))
+    assert data[KEY_REPORTS_DIR] == str(pasta)
+
+
+def test_set_reports_dir_preserva_secoes(tmp_path, monkeypatch):
+    monkeypatch.setattr(io_mod, "app_root", lambda: tmp_path)
+    default_config_path().write_text(
+        json.dumps({"alunos_sorteados": ["Ana"]}),
+        encoding="utf-8",
+    )
+
+    set_reports_dir(tmp_path / "novos")
+
+    data = json.loads(default_config_path().read_text(encoding="utf-8"))
+    assert data["alunos_sorteados"] == ["Ana"]
+    assert data[KEY_REPORTS_DIR] == str(tmp_path / "novos")

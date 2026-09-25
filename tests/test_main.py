@@ -159,6 +159,9 @@ def test_run_envio_teste_com_senha_envia_para_to(tmp_path, monkeypatch, capsys):
 
 
 def test_run_envio_individual_com_relatorio(tmp_path, monkeypatch, capsys):
+    from code_gen import io
+
+    monkeypatch.setattr(io, "default_reports_dir", lambda: tmp_path)
     rows = [
         {"Nome": "Maria", "E-mail": "maria@ex.com", "Códigos": "0001"},
         {"Nome": "João", "E-mail": "joao@ex.com", "Códigos": "0002, 0003"},
@@ -192,13 +195,19 @@ def test_run_envio_individual_com_relatorio(tmp_path, monkeypatch, capsys):
     assert [msg["to"] for _, msg in chamadas] == ["maria@ex.com", "joao@ex.com"]
     assert [msg["numeros"] for _, msg in chamadas] == ["0001", "0002, 0003"]
 
-    # Verifica geração do relatório
-    relatorios = list(tmp_path.glob("relatorio_envio_*.csv"))
+    # Verifica geração do relatório e do unificado
+    relatorios = [
+        item
+        for item in tmp_path.glob("relatorio_envio_*.csv")
+        if not item.name.startswith("relatorio_envio_unificado_")
+    ]
     assert len(relatorios) == 1
     conteudo = relatorios[0].read_text(encoding="utf-8-sig")
     assert "maria@ex.com" in conteudo
     assert "joao@ex.com" in conteudo
     assert "Sucesso" in conteudo
+    unificados = list(tmp_path.glob("relatorio_envio_unificado_*.csv"))
+    assert len(unificados) == 1
 
 
 def test_run_envio_pausa_lote(tmp_path, monkeypatch):
